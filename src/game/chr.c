@@ -51,7 +51,12 @@
 #include "video.h"
 #endif
 
+#ifdef PLATFORM_N64
 void rng2SetSeed(u32 seed);
+#else
+// the real signature; a mismatched prototype traps at runtime in WebAssembly
+void rng2SetSeed(u64 seed);
+#endif
 
 #ifdef PLATFORM_N64
 void *var8009ccc0[20];

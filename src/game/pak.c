@@ -24,6 +24,26 @@
 #include "types.h"
 #include "string.h"
 
+#ifndef PLATFORM_N64
+#include "system.h"
+
+// --debug-pak: trace the save system (the N64 code's own osSyncPrintf output is compiled out)
+s32 pakDebugEnabled(void)
+{
+	static s32 enabled = -1;
+
+	if (enabled < 0) {
+		enabled = sysArgCheck("--debug-pak");
+	}
+
+	return enabled;
+}
+
+#define PAKDBG(...) do { if (pakDebugEnabled()) sysLogPrintf(LOG_NOTE, "pak: " __VA_ARGS__); } while (0)
+#else
+#define PAKDBG(...)
+#endif
+
 /**
  * Perfect Dark supports saving to an in-cartridge EEPROM chip, as well as to
  * controller paks which can be inserted in any of the four controllers.
@@ -1798,12 +1818,14 @@ s32 _pakGetFileIdsByType(s8 device, u32 filetype, u32 *fileids)
 	s32 result = pak0f119298(device);
 
 	if (result != 0) {
+		PAKDBG("dev %d GetFileIds: not ready (%d), type %d state %d", device, result, g_Paks[device].type, g_Paks[device].state);
 		return result;
 	}
 
 	result = pakGetFilesystemLength(device, &fslen);
 
 	if (result != 0) {
+		PAKDBG("dev %d GetFileIds: GetFilesystemLength failed (%d)", device, result);
 		return result;
 	}
 
@@ -1831,6 +1853,8 @@ s32 _pakGetFileIdsByType(s8 device, u32 filetype, u32 *fileids)
 	}
 
 	fileids[len] = 0;
+
+	PAKDBG("dev %d GetFileIds type %x: %d files, fslen %u, last header result %d", device, filetype, len, fslen, result);
 
 	if (result == PAK_ERR2_CHECKSUM) {
 		return 7;
@@ -3034,6 +3058,7 @@ bool mempakPrepare(s8 device)
 	joyDisableCyclicPolling(JOYARGS(3319));
 	sp48 = pakFindNote(PFS(device), ROM_COMPANYCODE, ROM_GAMECODE, g_PakNoteGameName, g_PakNoteExtName, &g_Paks[device].pdnoteindex);
 	joyEnableCyclicPolling(JOYARGS(3321));
+	PAKDBG("dev %d prepare: FindNote %d, pdnumbytes %u pdnumblocks %u", device, sp48, g_Paks[device].pdnumbytes, g_Paks[device].pdnumblocks);
 
 	// If it doesn't exist, allocate it
 	if (sp48 != PAK_ERR1_OK) {
@@ -3084,8 +3109,11 @@ bool mempakPrepare(s8 device)
 
 	// Check the filesystem for errors and try to recreate it if broken
 	if (!error2) {
-		if (pakRepairFilesystem(device) == -1) {
+		const s32 repaired = pakRepairFilesystem(device);
+		PAKDBG("dev %d prepare: RepairFilesystem %d", device, repaired);
+		if (repaired == -1) {
 			serial = pakCreateFilesystem(device);
+			PAKDBG("dev %d prepare: CreateFilesystem -> serial %d", device, serial);
 
 			if (serial != -1) {
 				g_Paks[device].serial = serial;
@@ -3101,11 +3129,16 @@ bool mempakPrepare(s8 device)
 
 	if (!error2) {
 		maxfileid = pakFindMaxFileId(device);
+		PAKDBG("dev %d prepare: MaxFileId %d", device, maxfileid);
 
 		if (maxfileid != -1) {
 			g_Paks[device].maxfileid = maxfileid;
 
-			if (pakGetFileIdsByType(device, PAKFILETYPE_TERMINATOR, fileids) == 0 && pakCreateInitialFiles(device)) {
+			const s32 idsresult = pakGetFileIdsByType(device, PAKFILETYPE_TERMINATOR, fileids);
+			const bool created = (idsresult == 0) && pakCreateInitialFiles(device);
+			PAKDBG("dev %d prepare: GetFileIds(TERMINATOR) %d, CreateInitialFiles %d", device, idsresult, created);
+
+			if (created) {
 				g_Paks[device].state = (device == SAVEDEVICE_GAMEPAK) ? PAKSTATE_READY : PAKSTATE_MEM_POST_PREPARE;
 
 				filelistInvalidatePak(device);
@@ -3116,6 +3149,7 @@ bool mempakPrepare(s8 device)
 	}
 
 	g_Paks[device].state = PAKSTATE_22;
+	PAKDBG("dev %d prepare: FAILED (error1 %d error2 %d), pak left in error state", device, error1, error2);
 
 	filelistInvalidatePak(device);
 

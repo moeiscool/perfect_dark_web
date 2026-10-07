@@ -34,6 +34,10 @@ __attribute__((dllexport)) u32 AmdPowerXpressRequestHighPerformance = 1;
 
 #include <unistd.h>
 
+#ifdef PLATFORM_WEB
+#include <emscripten.h>
+#endif
+
 // figure out how to yield
 #if defined(PLATFORM_X86) || defined(PLATFORM_X86_64)
 // this should work even if the code is not built with SSE enabled, at least on gcc and clang,
@@ -209,7 +213,15 @@ void sysFatalError(const char *fmt, ...)
 	fflush(stdout);
 	fflush(stderr);
 
+#ifdef PLATFORM_WEB
+	EM_ASM({
+		if (Module.onFatalError) {
+			Module.onFatalError(UTF8ToString($0));
+		}
+	}, errmsg);
+#else
 	SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Fatal error", errmsg, NULL);
+#endif
 
 	exit(1);
 }
@@ -305,6 +317,14 @@ void sysSleep(const s64 hns)
 	li.QuadPart = -hns;
 	SetWaitableTimer(timer, &li, 0, NULL, NULL, FALSE);
 	WaitForSingleObject(timer, INFINITE);
+#elif defined(PLATFORM_WEB)
+	// nanosleep busy-waits in the browser; yield to the event loop instead (requires ASYNCIFY).
+	// sub-millisecond sleeps are skipped: a setTimeout round trip would cost far more than requested,
+	// and the frame loop already yields once per frame in videoEndFrame()
+	const u32 ms = (u32)(hns / 10000);
+	if (ms) {
+		emscripten_sleep(ms);
+	}
 #else
 	const struct timespec spec = { 0, hns * 100 };
 	nanosleep(&spec, NULL);

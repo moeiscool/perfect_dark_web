@@ -13,6 +13,10 @@
 #include "audio.h"
 #include "fs.h"
 
+#ifdef PLATFORM_WEB
+#include <emscripten.h>
+#endif
+
 #define EEPROM_SIZE (EEP16K_MAXBLOCKS * 8)
 #define EEPROM_FNAME "eeprom.bin"
 #define EEPROM_PATH "$S/" EEPROM_FNAME
@@ -26,6 +30,8 @@ u32 osMemSize = 16 * 1024 * 1024; /* expansion pak installed plus some extra */
 s32 osTvType = OS_TV_NTSC;        /* 0 = PAL, 1 = NTSC, 2 = MPAL */
 s32 osResetType = 0;              /* 0 = cold reset */
 s32 osViClock = VI_NTSC_CLOCK;
+
+s32 pakDebugEnabled(void); // pak.c, --debug-pak
 
 static u8 eeprom[EEPROM_SIZE];
 static char eepromPath[FS_MAXPATH + 1];
@@ -291,6 +297,14 @@ static inline void osEeepromSave(const char *fname)
 	if (fp) {
 		fwrite(eeprom, 1, EEPROM_SIZE, fp);
 		fsFileFree(fp);
+#ifdef PLATFORM_WEB
+		// the file only lives in memory until the page flushes it to IndexedDB; ask for that now
+		EM_ASM({
+			if (Module.onSaveWritten) {
+				Module.onSaveWritten();
+			}
+		});
+#endif
 	} else {
 		sysLogPrintf(LOG_ERROR, "could not save EEPROM to `%s`: %s", fsFullPath(fname), strerror(errno));
 	}
@@ -311,6 +325,10 @@ s32 osEepromLongRead(OSMesgQueue *mq, u8 address, u8 *buffer, int nbytes)
 
 	memcpy(buffer, eeprom + address * 8, nbytes);
 
+	if (pakDebugEnabled()) {
+		sysLogPrintf(LOG_NOTE, "eeprom: read  block %3u len %4d", (u32)address, nbytes);
+	}
+
 	return 0;
 }
 
@@ -323,6 +341,10 @@ s32 osEepromLongWrite(OSMesgQueue *mq, u8 address, u8 *buffer, int nbytes)
 	osEeepromLoad(eepromPath);
 
 	memcpy(eeprom + address * 8, buffer, nbytes);
+
+	if (pakDebugEnabled()) {
+		sysLogPrintf(LOG_NOTE, "eeprom: write block %3u len %4d", (u32)address, nbytes);
+	}
 
 	osEeepromSave(eepromPath);
 

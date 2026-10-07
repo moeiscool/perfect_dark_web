@@ -250,7 +250,7 @@ static struct ShaderProgram* gfx_opengl_create_and_load_new_shader(uint64_t shad
     vs_len += sprintf(vs_buf + vs_len, "#version %s\n", gl_glsl_version_str);
 
     if (gl_es) {
-        append_line(vs_buf, &vs_len, "precision mediump float;");
+        append_line(vs_buf, &vs_len, "precision highp float;");
     }
 
     if (gl_glsl_version >= 130) {
@@ -329,7 +329,7 @@ static struct ShaderProgram* gfx_opengl_create_and_load_new_shader(uint64_t shad
     fs_len += sprintf(fs_buf + fs_len, "#version %s\n", gl_glsl_version_str);
 
     if (gl_es) {
-        append_line(fs_buf, &fs_len, "precision mediump float;");
+        append_line(fs_buf, &fs_len, "precision highp float;");
     }
 
     if (gl_glsl_version >= 130) {
@@ -915,7 +915,10 @@ static void *gl_load_proc(const char *name) {
         }
     }
 
+#ifndef __EMSCRIPTEN__
+    // WebGL2 lacks a lot of desktop GL entry points that glad asks for; don't spam the console
     sysLogPrintf(LOG_ERROR, "GL: could not find function: %s", name);
+#endif
 
     return NULL;
 }
@@ -1252,7 +1255,12 @@ void gfx_opengl_copy_framebuffer(int fb_dst, int fb_src, int left, int top, bool
 
     glBindFramebuffer(GL_FRAMEBUFFER, framebuffers[current_framebuffer].fbo);
 
-    glReadBuffer(GL_BACK);
+    // GLES/WebGL2 only accepts GL_BACK as the read buffer of the default framebuffer
+    if (!gl_es || framebuffers[current_framebuffer].fbo == 0) {
+        glReadBuffer(GL_BACK);
+    } else {
+        glReadBuffer(GL_COLOR_ATTACHMENT0);
+    }
 
     glEnable(GL_SCISSOR_TEST);
 }

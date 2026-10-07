@@ -747,6 +747,7 @@ void bmoveProcessInput(bool allowc1x, bool allowc1y, bool allowc1buttons, bool i
 	const f32 mlookscale = g_Vars.lvupdate240 ? (4.f / (f32)g_Vars.lvupdate240) : 4.f;
 	const bool allowmlook = (g_Vars.currentplayernum == 0) && (allowc1x || allowc1y);
 	bool allowmcross = false;
+	bool freeaim = false;
 #endif
 
 	controlmode = optionsGetControlMode(g_Vars.currentplayerstats->mpindex);
@@ -810,6 +811,39 @@ void bmoveProcessInput(bool allowc1x, bool allowc1y, bool allowc1buttons, bool i
 			(movedata.freelookdx || movedata.freelookdy || g_Vars.currentplayer->swivelpos[0] || g_Vars.currentplayer->swivelpos[1]);
 		if (movedata.invertpitch) {
 			movedata.freelookdy = -movedata.freelookdy;
+		}
+
+		// Free aim (unlocked mouse, eg. in the browser): the cursor's offset from its anchor
+		// is the crosshair position, and pushing the crosshair past the edge boundary turns the view
+		freeaim = inputMouseIsFreeAim();
+		if (freeaim) {
+			f32 fx, fy;
+			inputMouseGetFreeAimPos(&fx, &fy);
+			if (movedata.invertpitch) {
+				fy = -fy;
+			}
+			g_Vars.currentplayer->swivelpos[0] = fx;
+			g_Vars.currentplayer->swivelpos[1] = fy;
+			allowmcross = true;
+
+			// While aiming, the edge turning is handled by the crosshair code further down.
+			// Otherwise feed it in as mouselook so it goes through the regular turn/pitch path
+			// (freelook gets multiplied by mlookscale there, so a full excess equals a full stick).
+			movedata.freelookdx = 0.0f;
+			movedata.freelookdy = 0.0f;
+			const f32 edge = PLAYER_EXTCFG().crosshairedgeboundary;
+			if (!g_Vars.currentplayer->insightaimmode && edge < 1.0f && mlookscale > 0.0f) {
+				if (fx > edge) {
+					movedata.freelookdx = (fx - edge) / (1.0f - edge) / mlookscale;
+				} else if (fx < -edge) {
+					movedata.freelookdx = (fx + edge) / (1.0f - edge) / mlookscale;
+				}
+				if (fy > edge) {
+					movedata.freelookdy = (fy - edge) / (1.0f - edge) / mlookscale;
+				} else if (fy < -edge) {
+					movedata.freelookdy = (fy + edge) / (1.0f - edge) / mlookscale;
+				}
+			}
 		}
 	}
 	// always pause with ESC
@@ -1467,8 +1501,8 @@ void bmoveProcessInput(bool allowc1x, bool allowc1y, bool allowc1buttons, bool i
 							movedata.speedvertaup += vertaup;
 							movedata.speedvertadown += vertadown;
 						}
-					} else {
-						// Reset mouse aim position when not aiming
+					} else if (!freeaim) {
+						// Reset mouse aim position when not aiming (in free aim it always follows the cursor)
 						g_Vars.currentplayer->swivelpos[0] = 0.f;
 						g_Vars.currentplayer->swivelpos[1] = 0.f;
 					}
@@ -2170,6 +2204,12 @@ void bmoveProcessInput(bool allowc1x, bool allowc1y, bool allowc1buttons, bool i
 
 		bgunSetAimType(0);
 
+#ifndef PLATFORM_N64
+		if (freeaim) {
+			// Free aim - the crosshair follows the cursor
+			bgunSwivelWithDamp(g_Vars.currentplayer->swivelpos[0], g_Vars.currentplayer->swivelpos[1], 0.01f);
+		} else
+#endif
 		if (
 				(
 				 movedata.canautoaim

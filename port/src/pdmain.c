@@ -77,7 +77,9 @@
 extern u8 *g_MempHeap;
 extern u32 g_MempHeapSize;
 
-void rngSetSeed(u32 seed);
+// the function takes a u64; the decomp declares it with a u32 to match N64 codegen,
+// but a mismatched prototype traps at runtime in WebAssembly
+void rngSetSeed(u64 seed);
 
 bool var8005d9b0 = false;
 s32 g_StageNum = STAGE_TITLE;
@@ -505,6 +507,12 @@ void mainLoop(void)
 				mainTick();
 				schedEndFrame(&g_Sched);
 			}
+#ifdef PLATFORM_WEB
+			else {
+				// next tick isn't due yet; give the browser 1ms instead of busy-waiting
+				sysSleep(10000);
+			}
+#endif
 			if (g_TickExtraSleep) {
 				sysSleep(EXTRA_SLEEP_TIME);
 			}

@@ -17,6 +17,7 @@
 #include "mod.h"
 #include "system.h"
 #include "utils.h"
+#include "platform.h"
 
 u32 g_OsMemSize = 0;
 s32 g_OsMemSizeMb = 16;
@@ -82,6 +83,18 @@ static void gameInit(void)
 		g_HudAlignModeR = G_ASPECT_RIGHT_EXT | G_ASPECT_WIDE_EXT;
 	}
 }
+
+#ifdef PLATFORM_WEB
+#include <emscripten.h>
+
+// A browser tab never runs the atexit handler below, so the page (web/pd-web.js) calls this
+// periodically and when the tab is hidden or closed to keep pd.ini (options, binds) saved.
+EMSCRIPTEN_KEEPALIVE void pdWebSaveConfig(void)
+{
+	inputSaveBinds();
+	configSave(CONFIG_PATH);
+}
+#endif
 
 static void cleanup(void)
 {

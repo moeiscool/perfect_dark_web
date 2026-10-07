@@ -1,0 +1,271 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Perfect Dark</title>
+  <style>
+    :root {
+      --bg: #07090c;
+      --panel: #11151b;
+      --panel-border: #232a33;
+      --text: #e6e9ee;
+      --muted: #8b95a3;
+      --accent: #d8402f;
+      --accent-hover: #ee5443;
+      --ok: #4fb477;
+      --error: #ff6b5b;
+      --key-bg: #1b2129;
+    }
+
+    * { box-sizing: border-box; }
+
+    html, body {
+      margin: 0;
+      height: 100%;
+      background: var(--bg);
+      color: var(--text);
+      font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      overflow: hidden;
+    }
+
+    /* SDL sizes the canvas' pixel buffer; CSS makes it fill the page */
+    #canvas {
+      position: fixed;
+      inset: 0;
+      width: 100vw;
+      height: 100vh;
+      display: block;
+      background: #000;
+      outline: none;
+    }
+
+    #overlay {
+      position: fixed;
+      inset: 0;
+      display: grid;
+      place-items: center;
+      padding: 16px;
+      background: radial-gradient(ellipse at top, #1a0f10 0%, var(--bg) 60%);
+      overflow-y: auto;
+    }
+    #overlay[hidden] { display: none; }
+
+    .panel {
+      width: min(560px, 100%);
+      background: var(--panel);
+      border: 1px solid var(--panel-border);
+      border-radius: 12px;
+      padding: 28px;
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+    }
+
+    h1 {
+      margin: 0 0 4px;
+      font-size: 28px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+    h1 span { color: var(--accent); }
+
+    .subtitle { margin: 0 0 22px; color: var(--muted); }
+
+    #drop {
+      display: block;
+      border: 2px dashed var(--panel-border);
+      border-radius: 10px;
+      padding: 22px;
+      text-align: center;
+      cursor: pointer;
+      transition: border-color 0.15s, background 0.15s;
+    }
+    #drop:hover, #drop.is-dragging { border-color: var(--accent); background: rgba(216, 64, 47, 0.06); }
+    #drop.has-rom { border-style: solid; border-color: var(--ok); }
+    #drop strong { display: block; margin-bottom: 4px; }
+    #drop small { color: var(--muted); }
+    #rom-info { color: var(--ok); font-weight: 600; }
+    #rom-file { display: none; }
+
+    .actions { display: flex; gap: 10px; margin-top: 18px; flex-wrap: wrap; }
+
+    button {
+      font: inherit;
+      border-radius: 8px;
+      border: 1px solid var(--panel-border);
+      background: var(--key-bg);
+      color: var(--text);
+      padding: 10px 16px;
+      cursor: pointer;
+    }
+    button:hover:not(:disabled) { border-color: var(--muted); }
+    button:disabled { opacity: 0.45; cursor: not-allowed; }
+
+    #start {
+      flex: 1;
+      background: var(--accent);
+      border-color: var(--accent);
+      font-weight: 700;
+      letter-spacing: 0.04em;
+    }
+    #start:hover:not(:disabled) { background: var(--accent-hover); border-color: var(--accent-hover); }
+
+    #status { min-height: 1.5em; margin: 12px 0 0; color: var(--muted); }
+    #status.is-error { color: var(--error); }
+
+    details { margin-top: 20px; border-top: 1px solid var(--panel-border); padding-top: 14px; }
+    summary { cursor: pointer; color: var(--muted); }
+
+    .controls {
+      display: grid;
+      grid-template-columns: auto 1fr;
+      gap: 6px 14px;
+      margin-top: 12px;
+      font-size: 14px;
+    }
+    .controls dt { white-space: nowrap; }
+    .controls dd { margin: 0; color: var(--muted); }
+
+    kbd {
+      display: inline-block;
+      min-width: 1.6em;
+      padding: 1px 6px;
+      border: 1px solid var(--panel-border);
+      border-bottom-width: 2px;
+      border-radius: 5px;
+      background: var(--key-bg);
+      font: 12px/1.6 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      text-align: center;
+    }
+
+    .note { margin: 14px 0 0; font-size: 13px; color: var(--muted); }
+    .note.warn { color: #f0b45a; }
+    .note a { color: inherit; }
+
+    #toolbar {
+      position: fixed;
+      top: 10px;
+      right: 10px;
+      z-index: 5;
+      display: flex;
+      gap: 6px;
+      opacity: 0.8;
+    }
+    #toolbar button { padding: 6px 10px; font-size: 13px; }
+    #backup-ingame { display: none; }
+    body.is-running #backup-ingame { display: inline-block; }
+    body.is-running #toolbar { opacity: 0; transition: opacity 0.3s; }
+    body.is-running #toolbar:hover, body.is-running #toolbar:focus-within { opacity: 0.9; }
+
+    code { font: 12px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+
+    #toast {
+      position: fixed;
+      left: 50%;
+      bottom: 20px;
+      transform: translate(-50%, 20px);
+      background: var(--panel);
+      border: 1px solid var(--panel-border);
+      border-radius: 8px;
+      padding: 8px 14px;
+      font-size: 14px;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.2s, transform 0.2s;
+      z-index: 10;
+      max-width: calc(100vw - 32px);
+    }
+    #toast.is-visible { opacity: 1; transform: translate(-50%, 0); }
+
+    #error {
+      position: fixed;
+      inset: 0;
+      display: grid;
+      place-items: center;
+      padding: 16px;
+      background: rgba(0, 0, 0, 0.8);
+      z-index: 20;
+    }
+    #error[hidden] { display: none; }
+    #error .panel { border-color: var(--error); }
+    #error-text { white-space: pre-wrap; font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 13px; }
+  </style>
+</head>
+<body>
+  <canvas id="canvas" tabindex="-1"></canvas>
+
+  <div id="toolbar">
+    <button id="backup-ingame" type="button" title="Download a backup of your saves and settings">Back up saves</button>
+    <button id="fullscreen" type="button" title="Toggle fullscreen">Fullscreen</button>
+  </div>
+
+  <div id="overlay">
+    <div class="panel">
+      <h1>Perfect <span>Dark</span></h1>
+      <p class="subtitle">PC port, running in your browser.</p>
+
+      <label id="drop" for="rom-file">
+        <strong>Choose your Perfect Dark ROM</strong>
+        <small>NTSC v1.1 (.z64, .v64 or .n64), or drop the file here.<br>
+          It stays on this computer and is remembered for next time.</small>
+        <div id="rom-info"></div>
+        <input id="rom-file" type="file" accept=".z64,.v64,.n64,.rom,.bin">
+      </label>
+
+      <div class="actions">
+        <button id="start" type="button" disabled>Start</button>
+        <button id="change-rom" type="button" hidden>Change ROM</button>
+      </div>
+      <p id="status" role="status"></p>
+      <p id="secure-note" class="note warn" hidden>
+        Gamepads only work over HTTPS. Open <a id="secure-link" href="#"></a> instead
+        (accept the certificate warning once).
+      </p>
+
+      <details>
+        <summary>Saves</summary>
+        <p class="note">
+          Agents are saved to the Game Pak, which is kept in this browser and saved as you play.
+          Back them up to a file to move them to another browser or computer, or to keep them safe
+          if this site's data is cleared. The <code>http://</code> and <code>https://</code> addresses
+          keep separate saves.
+        </p>
+        <div class="actions">
+          <button id="export-saves" type="button">Back up saves</button>
+          <button id="import-saves" type="button">Restore from backup…</button>
+          <input id="import-file" type="file" accept=".json,application/json" hidden>
+        </div>
+        <p id="saves-status" class="note" role="status"></p>
+      </details>
+
+      <details open>
+        <summary>Controls (player 1)</summary>
+        <dl class="controls">
+          <dt><kbd>W</kbd> <kbd>A</kbd> <kbd>S</kbd> <kbd>D</kbd></dt><dd>Move / strafe</dd>
+          <dt>Mouse</dt><dd>Move the crosshair. Pushing it to the screen edge turns the view.</dd>
+          <dt><kbd>C</kbd></dt><dd>Recenter the crosshair. The cursor's current spot becomes the new center.</dd>
+          <dt>Left click / <kbd>Space</kbd></dt><dd>Fire</dd>
+          <dt>Right click</dt><dd>Aim</dd>
+          <dt><kbd>E</kbd> / <kbd>R</kbd></dt><dd>Use / reload</dd>
+          <dt>Mouse wheel</dt><dd>Change weapon</dd>
+          <dt><kbd>Tab</kbd> / <kbd>Esc</kbd></dt><dd>Pause menu</dd>
+          <dt>Gamepad</dt><dd>Press any button to connect. It works alongside the keyboard and mouse.</dd>
+        </dl>
+        <p class="note">You can change all of these in the game's options menu. The settings and save files are kept in this browser.</p>
+      </details>
+    </div>
+  </div>
+
+  <div id="toast" role="status" aria-live="polite"></div>
+
+  <div id="error" hidden>
+    <div class="panel">
+      <h1>Game <span>error</span></h1>
+      <p id="error-text"></p>
+      <div class="actions"><button type="button" onclick="location.reload()">Reload</button></div>
+    </div>
+  </div>
+
+  <script src="pd.js"></script>
+  <script src="pd-web.js"></script>
+</body>
+</html>

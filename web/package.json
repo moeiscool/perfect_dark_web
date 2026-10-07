@@ -1,0 +1,14 @@
+{
+  "name": "perfect-dark-web",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Static server for the Perfect Dark WebAssembly build",
+  "main": "server.js",
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "build": "bash build.sh",
+    "start": "node server.js"
+  }
+}

@@ -67,6 +67,10 @@ set(archdetect_c_code "
     #else
         #error cmake_ARCH ppc
     #endif
+#elif defined(__wasm32__)
+    #error cmake_ARCH wasm32
+#elif defined(__wasm64__)
+    #error cmake_ARCH wasm64
 #endif
 
 #error cmake_ARCH unknown

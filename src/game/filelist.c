@@ -22,6 +22,14 @@
 #include "data.h"
 #include "types.h"
 
+#ifndef PLATFORM_N64
+#include "system.h"
+s32 pakDebugEnabled(void);
+#define FILELISTDBG(...) do { if (pakDebugEnabled()) sysLogPrintf(LOG_NOTE, "filelist: " __VA_ARGS__); } while (0)
+#else
+#define FILELISTDBG(...)
+#endif
+
 s32 g_FilelistKnownPlugCounts[5];
 
 struct filelist *g_FileLists[MAX_PLAYERS] = { NULL };
@@ -209,6 +217,10 @@ void filelistUpdate(struct filelist *list)
 
 		ret = pakGetFileIdsByType(dis2dev[i], sp3a88[list->filetype], spa88);
 
+		if (dis2dev[i] == SAVEDEVICE_GAMEPAK) {
+			FILELISTDBG("game pak GetFileIds(filetype %d) -> %d", list->filetype, ret);
+		}
+
 		if (ret == 0) {
 			// No error
 			for (j = 0; spa88[j] != 0; j++) {
@@ -245,6 +257,8 @@ void filelistUpdate(struct filelist *list)
 		s32 ret = pakReadBodyAtGuid(filedevices[i], sp1288[i], file->name, sizeof(file->name));
 
 		if (ret);
+
+		FILELISTDBG("device %d file %d: ReadBody -> %d", filedevices[i], sp1288[i], ret);
 
 		if (ret == 0) {
 			// No error

@@ -154,8 +154,14 @@ static void gfx_sdl_init(const struct GfxWindowInitSettings *set) {
         { 2, 1, SDL_GL_CONTEXT_PROFILE_COMPATIBILITY }, // 2.1: absolute last resort, will still require GLSL130 as an extension
     };
 
+#ifdef PLATFORM_WEB
+    // the browser only offers WebGL2, which is GLES 3.0
+    u32 verstart = 4;
+    const u32 verend = 5;
+#else
     u32 verstart = 1;
     const u32 verend = sizeof(glver) / sizeof(*glver);
+#endif
     const char *verstr = sysArgGetString("--gl-version");
     if (verstr && *verstr) {
         // user override
@@ -203,7 +209,9 @@ static void gfx_sdl_init(const struct GfxWindowInitSettings *set) {
     }
 
     SDL_GL_MakeCurrent(wnd, ctx);
+#ifndef PLATFORM_WEB
     SDL_GL_SetSwapInterval(1);
+#endif
 
     SDL_ShowWindow(wnd);
 
@@ -354,9 +362,12 @@ static inline void sync_framerate_with_timer(void) {
 }
 
 static void gfx_sdl_swap_buffers_begin(void) {
+#ifndef PLATFORM_WEB
+    // in the browser frames are paced by requestAnimationFrame (see videoEndFrame)
     if (target_fps) {
         sync_framerate_with_timer();
     }
+#endif
     SDL_GL_SwapWindow(wnd);
 }
 
@@ -393,6 +404,11 @@ static int gfx_sdl_get_swap_interval(void) {
 }
 
 static bool gfx_sdl_set_swap_interval(int interval) {
+#ifdef PLATFORM_WEB
+    // only valid with emscripten_set_main_loop, which we don't use; the browser always vsyncs
+    vsync_enabled = true;
+    return true;
+#endif
     const bool success = SDL_GL_SetSwapInterval(interval) >= 0;
     vsync_enabled = success && (interval != 0);
     if (!success) {

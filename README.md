@@ -191,6 +191,21 @@ Controls can be rebound in `pd.ini`. Default control scheme is as follows:
    * Execute command: `make -C build -j4`
 8. The resulting executable will be at `build/pd.arm64.nro`.
 
+### Web browser (WebAssembly)
+
+The game can be built to WebAssembly and played in a browser. Only the NTSC v1.1 ROM is supported. The ROM is never put on the server: each player picks their own `.z64`/`.v64`/`.n64` dump on the page, and it is remembered in the browser along with saves and settings.
+
+1. Install the [Emscripten SDK](https://emscripten.org/docs/getting_started/downloads.html) (for example to `~/emsdk`), plus `cmake`, `python3` and Node.js 18+.
+2. Build: `EMSDK=~/emsdk web/build.sh`. This produces `build-web/pd.js`, `build-web/pd.wasm` and the page.
+3. Serve: `node web/server.js`. It serves `build-web/` over HTTP on port 8080 and HTTPS on port 8443 (with a self-signed certificate generated on first run). Use `--port`, `--https-port`, `--root`, `--cert`/`--key` or `--no-https` to change that.
+4. Open `https://<server>:8443/` and accept the certificate warning once. Browsers only allow gamepads on HTTPS pages (or `http://localhost`).
+
+In the browser the mouse is never captured. The cursor's position relative to an anchor point moves the crosshair, and pushing the crosshair to the screen edge turns the view. Press `C` to recenter: the crosshair snaps to the middle and the cursor's current spot becomes the new anchor. The anchor is also reset whenever a menu closes. This mode can be turned on in desktop builds too with `Input.MouseFreeAim=1` in `pd.ini`. `Input.MouseFreeAimScale` and `Input.MouseRecenterKey` adjust it.
+
+A gamepad shows up after any of its buttons is pressed. It controls player 1 alongside the keyboard and mouse.
+
+Saves (the Game Pak, `eeprom.bin`) and settings (`pd.ini`) are kept in the browser's IndexedDB for that address. They are written as soon as the game saves, and the page asks the browser not to evict them. Use **Back up saves** (on the start screen, or the button in the top right corner while playing) to download them as a `.json` file, and **Restore from backup…** on the start screen to load them into another browser or after clearing site data. The `http://` and `https://` addresses count as different sites and keep separate saves. To trace the save system in the browser console, add `?args=--debug-pak` to the page address.
+
 ### Notes
 
 Alternate compilers or toolchains can be specified by passing `-DCMAKE_TOOLCHAIN_FILE=whatever` as normal. The port does not build with Visual Studio.

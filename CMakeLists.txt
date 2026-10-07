@@ -19,6 +19,10 @@ include(AssetUtils)
 
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_EXTENSIONS OFF)
+if(EMSCRIPTEN)
+  # EM_ASM/EM_JS (inline JavaScript) only work in -std=gnu* modes
+  set(CMAKE_C_EXTENSIONS ON)
+endif()
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
@@ -67,6 +71,9 @@ elseif(APPLE)
 elseif(NINTENDO_SWITCH)
   # Switch
   set(TARGET_OS "nswitch")
+elseif(EMSCRIPTEN)
+  # Browser (WebAssembly); must come before UNIX, which Emscripten also sets
+  set(TARGET_OS "web")
 elseif(UNIX)
   # Generic *nix; assume Linux
   set(TARGET_OS "linux")
@@ -201,6 +208,11 @@ add_compile_options($<$<COMPILE_LANGUAGE:CXX>:-Wno-unused-function>)
 if (APPLE)
   # Make it look for libs in the executable folder manually since CMake's rpath system is wack
   set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -rpath @executable_path")
+elseif(EMSCRIPTEN)
+  # Emscripten is clang, which doesn't know -Wno-format-truncation either
+  add_compile_options(-Wno-unknown-warning-option)
+  # Emscripten ports: SDL2 (also provides the GLES3/WebGL2 headers) and zlib
+  add_compile_options(-sUSE_SDL=2 -sUSE_ZLIB=1)
 else()
   # This warning is not recognized by XCode/Clang for some reason.
   add_compile_options(-Wno-format-truncation)
@@ -209,6 +221,44 @@ endif()
 # Dependencies
 
 set(LIBS )
+
+if(EMSCRIPTEN)
+
+# SDL2, zlib and GL all come from Emscripten ports and are linked through the flags below
+set(WEB_LINK_FLAGS
+  -sUSE_SDL=2
+  -sUSE_ZLIB=1
+  # WebGL2 == GLES 3.0; glad loads its function pointers through SDL_GL_GetProcAddress
+  -sMIN_WEBGL_VERSION=2
+  -sMAX_WEBGL_VERSION=2
+  -sFULL_ES3=1
+  -sGL_ENABLE_GET_PROC_ADDRESS=1
+  # the game runs a blocking main loop; ASYNCIFY lets it yield to the browser every frame
+  -sASYNCIFY=1
+  -sASYNCIFY_STACK_SIZE=131072
+  # menu items store either a text ID or a function pointer in the same field and tell them apart
+  # with `< 0x5a00` (menuResolveText). wasm function pointers are table indices starting at 1, so
+  # start the table above that or every dynamic menu label is read as a text ID
+  -sTABLE_BASE=32768
+  -sALLOW_MEMORY_GROWTH=1
+  -sINITIAL_MEMORY=268435456
+  -sSTACK_SIZE=8388608
+  # the JS loader (web/pd-web.js) writes the ROM into MEMFS and mounts IDBFS for saves before main runs
+  -sFORCE_FILESYSTEM=1
+  -lidbfs.js
+  -sMODULARIZE=1
+  -sEXPORT_NAME=createPerfectDark
+  -sEXPORTED_RUNTIME_METHODS=FS,IDBFS,addRunDependency,removeRunDependency
+  -sENVIRONMENT=web
+  -sEXIT_RUNTIME=0
+  # optimize the final wasm even though the C code is compiled with -Og
+  -O2
+)
+string(REPLACE ";" " " WEB_LINK_FLAGS_STR "${WEB_LINK_FLAGS}")
+set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} ${WEB_LINK_FLAGS_STR}")
+set(CMAKE_EXECUTABLE_SUFFIX ".js")
+
+else()
 
 # SDL2
 find_package(SDL2 REQUIRED)
@@ -254,6 +304,8 @@ if(NOT EXTRA_LIBRARIES)
   endif()
 endif()
 list(APPEND LIBS "${EXTRA_LIBRARIES}")
+
+endif() # EMSCRIPTEN
 
 # Sources
 
@@ -340,7 +392,12 @@ add_custom_target(pd_headers ALL DEPENDS ${JSON_HEADERS})
 
 # Game target
 
-set(BIN_NAME "pd${BIN_REGION}.${TARGET_ARCH}")
+if(EMSCRIPTEN)
+  # web/index.html loads pd.js + pd.wasm
+  set(BIN_NAME "pd")
+else()
+  set(BIN_NAME "pd${BIN_REGION}.${TARGET_ARCH}")
+endif()
 add_executable(pd ${SRC})
 add_dependencies(pd pd_headers)
 target_link_libraries(pd ${LIBS})
@@ -356,5 +413,15 @@ if(NINTENDO_SWITCH)
     COMMAND nacptool --create "Perfect Dark" "fgsfds and contributors" "${VERSION_ROMID}/${VERSION_BRANCH}/${VERSION_HASH}" "${BIN_NAME}.nacp"
     COMMAND aarch64-none-elf-strip -o ${CMAKE_BINARY_DIR}/${BIN_NAME}.stripped.elf ${CMAKE_BINARY_DIR}/${BIN_NAME}.elf
     COMMAND elf2nro ${CMAKE_BINARY_DIR}/${BIN_NAME}.stripped.elf ${CMAKE_BINARY_DIR}/${BIN_NAME}.nro --icon=${CMAKE_SOURCE_DIR}/dist/nswitch/icon.jpg --nacp=${BIN_NAME}.nacp
+  )
+endif()
+
+if(EMSCRIPTEN)
+  # put the page and loader next to pd.js/pd.wasm so the build dir can be served as-is (see web/server.js)
+  add_custom_command(TARGET pd POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+      ${CMAKE_SOURCE_DIR}/web/index.html
+      ${CMAKE_SOURCE_DIR}/web/pd-web.js
+      ${CMAKE_BINARY_DIR}/
   )
 endif()

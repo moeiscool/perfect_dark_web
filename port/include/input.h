@@ -219,8 +219,18 @@ s32 inputMouseGetPosition(s32 *x, s32 *y);
 void inputMouseGetRawDelta(s32 *dx, s32 *dy);
 
 // returns changes in mouse position since last frame, scaled by sensitivity
-// returns 0, 0 when the mouse is not locked into the window
+// returns 0, 0 when the mouse is not locked into the window (unless free aim is enabled)
 void inputMouseGetScaledDelta(f32 *dx, f32 *dy);
+
+// free aim (Input.MouseFreeAim, on by default in the browser): the mouse is never locked;
+// instead the cursor's offset from an anchor point positions the crosshair. The anchor is
+// reset to the cursor's position when Input.MouseRecenterKey is pressed or a menu closes.
+// returns true if free aim is currently driving the crosshair
+s32 inputMouseIsFreeAim(void);
+
+// returns the cursor's offset from the anchor in the range [-1, 1] on each axis,
+// where 1 is half the window width/height (scaled by Input.MouseFreeAimScale), +y is down
+void inputMouseGetFreeAimPos(f32 *x, f32 *y);
 
 // returns changes in mouse position since last frame, scaled by absolute sensitivity
 // returns 0, 0 when the mouse is not locked into the window

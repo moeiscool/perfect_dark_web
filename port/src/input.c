@@ -91,6 +91,25 @@ static s32 mouseShowCursor = 1;
 static f32 mouseSensX = 2.5f;
 static f32 mouseSensY = 2.5f;
 
+// free aim: the cursor is never captured, its offset from an anchor positions the crosshair
+#ifdef PLATFORM_WEB
+#define DEFAULT_MOUSE_FREEAIM 1
+#else
+#define DEFAULT_MOUSE_FREEAIM 0
+#endif
+static s32 mouseFreeAim = DEFAULT_MOUSE_FREEAIM;
+static s32 mouseFreeAimActive = 1; // cleared while a menu owns the cursor
+static f32 mouseFreeAimScale = 1.f;
+static char mouseRecenterKeyStr[MAX_BIND_STR] = "C";
+static u32 mouseRecenterKey = VK_KEYBOARD_BEGIN + SDL_SCANCODE_C;
+static s32 mouseAnchorX, mouseAnchorY;
+static s32 mouseAnchorValid = 0;
+
+#ifdef PLATFORM_WEB
+// set when the browser reports a new gamepad; it may need a mapping added (see inputWebMapGamepads)
+static s32 webJoystickAdded = 0;
+#endif
+
 static s32 lastKey = 0;
 static char lastChar = 0;
 static s32 textInput = 0;
@@ -494,6 +513,10 @@ static int inputEventFilter(void *data, SDL_Event *event)
 		}
 
 		case SDL_JOYDEVICEADDED:
+#ifdef PLATFORM_WEB
+			webJoystickAdded = 1;
+#endif
+			// fallthrough
 		case SDL_JOYDEVICEREMOVED:
 			numJoysticks = SDL_NumJoysticks(); // joystick count has changed
 			break;
@@ -720,8 +743,17 @@ s32 inputInit(void)
 #endif
 	}
 
-	if (!SDL_WasInit(SDL_INIT_GAMECONTROLLER | SDL_INIT_HAPTIC)) {
-		SDL_InitSubSystem(SDL_INIT_GAMECONTROLLER | SDL_INIT_HAPTIC);
+	// init these separately: if one fails, SDL undoes everything that call initialized, and haptics
+	// are optional (eg. SDL for the browser is built without them, which used to kill gamepad support)
+	if (!SDL_WasInit(SDL_INIT_GAMECONTROLLER)) {
+		if (SDL_InitSubSystem(SDL_INIT_GAMECONTROLLER) < 0) {
+			sysLogPrintf(LOG_ERROR, "input: could not init gamepad support: %s", SDL_GetError());
+		}
+	}
+	if (!SDL_WasInit(SDL_INIT_HAPTIC)) {
+		if (SDL_InitSubSystem(SDL_INIT_HAPTIC) < 0) {
+			sysLogPrintf(LOG_NOTE, "input: haptics unavailable: %s", SDL_GetError());
+		}
 	}
 
 	// try to load controller db from an external file in the save folder
@@ -744,7 +776,16 @@ s32 inputInit(void)
 		inputSetDefaultKeyBinds(i, 0);
 	}
 
-	if (mouseLockMode != MLOCK_AUTO) {
+	if (mouseRecenterKeyStr[0]) {
+		const s32 vk = inputGetKeyByName(mouseRecenterKeyStr);
+		if (vk > 0) {
+			mouseRecenterKey = vk;
+		}
+	}
+
+	if (mouseFreeAim) {
+		sysLogPrintf(LOG_NOTE, "input: mouse free aim enabled, recenter key is %s", inputGetKeyName(mouseRecenterKey));
+	} else if (mouseLockMode != MLOCK_AUTO) {
 		inputLockMouse(mouseLockMode);
 	}
 
@@ -876,6 +917,53 @@ s32 inputReadController(s32 idx, OSContPad *npad)
 	return 0;
 }
 
+static inline void inputMouseRecenter(void)
+{
+	mouseAnchorX = mouseX;
+	mouseAnchorY = mouseY;
+	mouseAnchorValid = 1;
+}
+
+#ifdef PLATFORM_WEB
+// Browsers expose gamepads through the Gamepad API, usually with the W3C "standard" layout.
+// If SDL has no GameController mapping for one, give it the standard layout so it can be used.
+static void inputWebMapGamepads(void)
+{
+	static const char *stdmapping =
+		"a:b0,b:b1,x:b2,y:b3,leftshoulder:b4,rightshoulder:b5,lefttrigger:b6,righttrigger:b7,"
+		"back:b8,start:b9,leftstick:b10,rightstick:b11,dpup:b12,dpdown:b13,dpleft:b14,dpright:b15,"
+		"guide:b16,leftx:a0,lefty:a1,rightx:a2,righty:a3";
+
+	numJoysticks = SDL_NumJoysticks();
+
+	for (s32 jidx = 0; jidx < numJoysticks; ++jidx) {
+		if (SDL_IsGameController(jidx)) {
+			continue;
+		}
+
+		char guid[64] = { 0 };
+		SDL_JoystickGetGUIDString(SDL_JoystickGetDeviceGUID(jidx), guid, sizeof(guid));
+
+		char name[128] = "Browser Gamepad";
+		const char *jname = SDL_JoystickNameForIndex(jidx);
+		if (jname && *jname) {
+			strncpy(name, jname, sizeof(name) - 1);
+			// commas would break the mapping string
+			for (char *p = name; *p; ++p) {
+				if (*p == ',') *p = ' ';
+			}
+		}
+
+		char mapping[512];
+		snprintf(mapping, sizeof(mapping), "%s,%s,%s", guid, name, stdmapping);
+		if (SDL_GameControllerAddMapping(mapping) >= 0) {
+			// SDL will now report the device as a game controller and send SDL_CONTROLLERDEVICEADDED
+			sysLogPrintf(LOG_NOTE, "input: added standard mapping for gamepad %d: %s", jidx, name);
+		}
+	}
+}
+#endif
+
 static inline void inputUpdateMouse(void)
 {
 	s32 mx, my;
@@ -903,6 +991,14 @@ static inline void inputUpdateMouse(void)
 	mouseX = mx;
 	mouseY = my;
 
+	if (mouseFreeAim) {
+		// recentering makes the cursor's current position the crosshair's neutral point
+		if (inputKeyJustPressed(mouseRecenterKey) || !mouseAnchorValid) {
+			inputMouseRecenter();
+		}
+		return;
+	}
+
 	// if MLOCK_AUTO is enabled, disable cursor if mouse is unlocked
 	// and we haven't moved it for a few seconds
 	if (mouseLockMode == MLOCK_AUTO && !mouseLocked) {
@@ -920,6 +1016,13 @@ static inline void inputUpdateMouse(void)
 
 void inputUpdate(void)
 {
+#ifdef PLATFORM_WEB
+	if (webJoystickAdded) {
+		webJoystickAdded = 0;
+		inputWebMapGamepads();
+	}
+#endif
+
 	SDL_GameControllerUpdate();
 
 	if (mouseEnabled) {
@@ -1231,6 +1334,12 @@ s32 inputButtonPressed(s32 idx, u32 contbtn)
 
 void inputLockMouse(s32 lock)
 {
+	if (mouseFreeAim) {
+		// free aim never captures the cursor
+		mouseLocked = 0;
+		return;
+	}
+
 	mouseLocked = !!lock;
 	SDL_SetRelativeMouseMode(mouseLocked);
 }
@@ -1256,12 +1365,37 @@ void inputMouseGetRawDelta(s32 *dx, s32 *dy)
 void inputMouseGetScaledDelta(f32* dx, f32* dy)
 {
 	f32 mdx = 0.f, mdy = 0.f;
-	if (mouseLocked) {
+	if (mouseLocked || inputMouseIsFreeAim()) {
 		mdx = mouseDX * (0.022f / 3.5f) * mouseSensX;
 		mdy = mouseDY * (0.022f / 3.5f) * mouseSensY;
 	}
 	if (dx) *dx = mdx;
 	if (dy) *dy = mdy;
+}
+
+s32 inputMouseIsFreeAim(void)
+{
+	return mouseFreeAim && mouseEnabled && mouseFreeAimActive && !textInput;
+}
+
+void inputMouseGetFreeAimPos(f32 *x, f32 *y)
+{
+	f32 fx = 0.f, fy = 0.f;
+
+	if (inputMouseIsFreeAim() && mouseAnchorValid) {
+		// at scale 1, moving the cursor half a window away from the anchor puts the crosshair at the edge
+		const f32 hw = videoGetWidth() * 0.5f;
+		const f32 hh = videoGetHeight() * 0.5f;
+		if (hw > 0.f && hh > 0.f) {
+			fx = (f32)(mouseX - mouseAnchorX) / hw * mouseFreeAimScale;
+			fy = (f32)(mouseY - mouseAnchorY) / hh * mouseFreeAimScale;
+			fx = (fx < -1.f) ? -1.f : ((fx > 1.f) ? 1.f : fx);
+			fy = (fy < -1.f) ? -1.f : ((fy > 1.f) ? 1.f : fy);
+		}
+	}
+
+	if (x) *x = fx;
+	if (y) *y = fy;
 }
 
 void inputMouseGetAbsScaledDelta(f32* dx, f32* dy)
@@ -1302,6 +1436,17 @@ void inputMouseEnable(s32 enabled)
 
 s32 inputAutoLockMouse(s32 wantlock)
 {
+	if (mouseEnabled && mouseFreeAim) {
+		// "lock" means gameplay has the mouse: re-anchor so the crosshair starts centered, hide the cursor;
+		// "unlock" means a menu has it: show the cursor so it can be used to click menu items
+		mouseFreeAimActive = !!wantlock;
+		if (wantlock) {
+			inputMouseRecenter();
+		}
+		inputMouseShowCursor(!wantlock);
+		return 1;
+	}
+
 	if (mouseEnabled && mouseLockMode == MLOCK_AUTO) {
 		inputLockMouse(wantlock);
 		return 1;
@@ -1519,6 +1664,9 @@ PD_CONSTRUCTOR static void inputConfigInit(void)
 	configRegisterInt("Input.MouseLockMode", &mouseLockMode, MLOCK_OFF, MLOCK_AUTO);
 	configRegisterFloat("Input.MouseSpeedX", &mouseSensX, -30.f, 30.f);
 	configRegisterFloat("Input.MouseSpeedY", &mouseSensY, -30.f, 30.f);
+	configRegisterInt("Input.MouseFreeAim", &mouseFreeAim, 0, 1);
+	configRegisterFloat("Input.MouseFreeAimScale", &mouseFreeAimScale, 0.1f, 10.f);
+	configRegisterString("Input.MouseRecenterKey", mouseRecenterKeyStr, MAX_BIND_STR);
 	configRegisterInt("Input.FakeGamepads", &fakeControllers, 0, 4);
 	configRegisterInt("Input.FirstGamepadNum", &firstController, 0, 3);
 	configRegisterInt("Input.UseHIDAPI", &useHIDAPI, 0, 1);

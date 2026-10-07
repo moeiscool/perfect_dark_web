@@ -78,7 +78,12 @@
 #include "types.h"
 #include "string.h"
 
+#ifdef PLATFORM_N64
 void rng2SetSeed(u32 seed);
+#else
+// the real signature; a mismatched prototype traps at runtime in WebAssembly
+void rng2SetSeed(u64 seed);
+#endif
 
 struct weaponobj *g_Proxies[30];
 f32 g_GasReleaseTimerMax240;

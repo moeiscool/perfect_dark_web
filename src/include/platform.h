@@ -4,6 +4,9 @@
 // detect OS
 #if defined(_WIN32)
 	#define PLATFORM_WIN32 1
+#elif defined(__EMSCRIPTEN__)
+	#define PLATFORM_POSIX 1
+	#define PLATFORM_WEB 1
 #elif defined(__SWITCH__)
 	#define PLATFORM_POSIX 1
 	#define PLATFORM_NSWITCH 1
@@ -31,6 +34,8 @@
 #elif defined(__arm__) || defined(_M_ARM)
 	// assume armv7
 	#define PLATFORM_ARM 7
+#elif defined(__wasm32__)
+	#define PLATFORM_WASM 1
 #else
 	#error "Unknown CPU arch."
 #endif

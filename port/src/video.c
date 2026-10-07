@@ -13,6 +13,17 @@
 #include "../fast3d/gfx_sdl.h"
 #include "../fast3d/gfx_opengl.h"
 
+#ifdef PLATFORM_WEB
+#include <emscripten.h>
+
+// The game runs one long blocking loop. Once per frame we suspend it (via ASYNCIFY) until the
+// browser's next animation frame, which lets the canvas present, input/gamepad events arrive,
+// and paces the game to the display refresh rate.
+EM_ASYNC_JS(void, videoWebWaitForFrame, (void), {
+	await new Promise((resolve) => requestAnimationFrame(resolve));
+});
+#endif
+
 #ifdef PLATFORM_NSWITCH
 #define DEFAULT_VID_WIDTH 1280
 #define DEFAULT_VID_HEIGHT 720
@@ -140,6 +151,10 @@ void videoEndFrame(void)
 	}
 
 	gfx_end_frame();
+
+#ifdef PLATFORM_WEB
+	videoWebWaitForFrame();
+#endif
 
 	++frames;
 	++fpsNumFrames;
