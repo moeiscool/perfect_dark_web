@@ -1,4 +1,4 @@
-# Perfect Dark port
+# Perfect Dark port (008 Second Light)
 
 This repository contains a work-in-progress port of the [Perfect Dark decompilation](https://github.com/n64decomp/perfect_dark) to modern platforms.
 
