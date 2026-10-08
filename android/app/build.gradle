@@ -1,0 +1,70 @@
+plugins {
+    id 'com.android.application'
+}
+
+// set by android/build.sh
+def pdWasm = findProperty('pdWasm') ?: ''
+def wabtDir = findProperty('wabtDir') ?: ''
+def sdlSource = findProperty('sdlSource') ?: ''
+def keystorePath = findProperty('keystore')
+
+android {
+    namespace 'ca.m03.perfectdark'
+    compileSdk 35
+    ndkVersion '27.2.12479018'
+
+    defaultConfig {
+        applicationId 'ca.m03.perfectdark'
+        minSdk 24
+        targetSdk 35
+        versionCode((findProperty('versionCode') ?: '1') as int)
+        versionName findProperty('versionName') ?: 'dev'
+
+        ndk {
+            // phones and tablets; x86_64 for Chromebooks and the emulator
+            abiFilters 'arm64-v8a', 'x86_64'
+        }
+        externalNativeBuild {
+            cmake {
+                arguments "-DPD_WASM=${pdWasm}", "-DWABT_DIR=${wabtDir}", "-DSDL_SOURCE=${sdlSource}",
+                          "-DANDROID_STL=c++_static"
+            }
+        }
+    }
+
+    externalNativeBuild {
+        cmake {
+            path 'jni/CMakeLists.txt'
+            version '3.22.1'
+        }
+    }
+
+    signingConfigs {
+        release {
+            if (keystorePath) {
+                storeFile file(keystorePath)
+                storePassword findProperty('keystorePassword')
+                keyAlias 'perfectdark'
+                keyPassword findProperty('keystorePassword')
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            if (keystorePath) {
+                signingConfig signingConfigs.release
+            }
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    lint {
+        abortOnError false
+    }
+}

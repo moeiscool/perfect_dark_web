@@ -113,6 +113,11 @@ int32_t platGlCreate(int32_t depth, int32_t stencil)
 	SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 3);
 	SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
 #endif
+	// 8 bits per channel, like a browser canvas (mobile EGL otherwise may pick RGB565)
+	SDL_GL_SetAttribute(SDL_GL_RED_SIZE, 8);
+	SDL_GL_SetAttribute(SDL_GL_GREEN_SIZE, 8);
+	SDL_GL_SetAttribute(SDL_GL_BLUE_SIZE, 8);
+	SDL_GL_SetAttribute(SDL_GL_ALPHA_SIZE, 8);
 	SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, depth > 0 ? depth : 24);
 	SDL_GL_SetAttribute(SDL_GL_STENCIL_SIZE, stencil > 0 ? stencil : 8);
 	SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);

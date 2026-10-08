@@ -1,0 +1,5 @@
+// Perfect Dark for Android: the native host (native_host/) running the web build's pd.wasm.
+// Build with android/build.sh, which supplies the paths below as Gradle properties.
+plugins {
+    id 'com.android.application' version '8.7.3' apply false
+}

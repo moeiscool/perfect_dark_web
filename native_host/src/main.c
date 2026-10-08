@@ -217,6 +217,7 @@ u32 w2c_env_pdhost_gl_create(struct w2c_env *e, u32 depth, u32 stencil)
 
 void w2c_env_pdhost_gl_swap(struct w2c_env *e)
 {
+	glReportErrors("in the frame");
 	platGlSwap();
 }
 

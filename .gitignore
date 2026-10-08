@@ -32,3 +32,10 @@ web/node_modules
 /build-ps5/
 /ps5/dist/
 /build-native/
+/android/dist/
+/android/.gradle/
+/android/app/build/
+/android/app/.cxx/
+/android/build/
+/android/app/src/main/java/org/libsdl/
+/android/local.properties

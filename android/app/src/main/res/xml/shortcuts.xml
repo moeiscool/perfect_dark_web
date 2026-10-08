@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- long-press the app icon: pick another ROM -->
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <shortcut
+        android:shortcutId="change_rom"
+        android:enabled="true"
+        android:icon="@mipmap/ic_launcher"
+        android:shortcutShortLabel="@string/change_rom">
+        <intent
+            android:action="ca.m03.perfectdark.CHANGE_ROM"
+            android:targetPackage="ca.m03.perfectdark"
+            android:targetClass="ca.m03.perfectdark.LauncherActivity" />
+    </shortcut>
+</shortcuts>

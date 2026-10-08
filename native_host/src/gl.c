@@ -103,6 +103,19 @@ typedef ptrdiff_t GLsizeiptr;
 GLFUNCS(DECLARE)
 #undef DECLARE
 
+// logs GL errors (a few, then every 600th), so rendering problems show up in the log
+void glReportErrors(const char *where)
+{
+	static unsigned count;
+	GLenum err;
+	while (pGetError && (err = pGetError()) != 0) {
+		if (count < 20 || count % 600 == 0) {
+			hostLog("GL error 0x%04x %s", err, where);
+		}
+		count++;
+	}
+}
+
 int glLoadFunctions(void)
 {
 #define LOAD(ret, name, args) p##name = (ret (*) args)platGlProc("gl" #name);
@@ -129,10 +142,19 @@ void w2c_env_glBindVertexArray(struct w2c_env *e, u32 a) { pBindVertexArray(a); 
 void w2c_env_glBlendFunc(struct w2c_env *e, u32 a, u32 b) { pBlendFunc(a, b); }
 void w2c_env_glBlitFramebuffer(struct w2c_env *e, u32 a, u32 b, u32 c, u32 d, u32 f, u32 g, u32 h, u32 i, u32 mask, u32 filter)
 {
+	glReportErrors("before glBlitFramebuffer");
 	pBlitFramebuffer(I(a), I(b), I(c), I(d), I(f), I(g), I(h), I(i), mask, filter);
+	glReportErrors("in glBlitFramebuffer");
 }
 void w2c_env_glBufferData(struct w2c_env *e, u32 target, u32 size, u32 data, u32 usage) { pBufferData(target, (GLsizeiptr)size, wptr(data), usage); }
-u32 w2c_env_glCheckFramebufferStatus(struct w2c_env *e, u32 a) { return pCheckFramebufferStatus(a); }
+u32 w2c_env_glCheckFramebufferStatus(struct w2c_env *e, u32 a)
+{
+	const u32 status = pCheckFramebufferStatus(a);
+	if (status != 0x8CD5) { // GL_FRAMEBUFFER_COMPLETE
+		hostLog("GL: framebuffer incomplete: 0x%04x", status);
+	}
+	return status;
+}
 void w2c_env_glClear(struct w2c_env *e, u32 a) { pClear(a); }
 void w2c_env_glClearColor(struct w2c_env *e, f32 r, f32 g, f32 b, f32 a) { pClearColor(r, g, b, a); }
 void w2c_env_glCompileShader(struct w2c_env *e, u32 a) { pCompileShader(a); }
