@@ -42,5 +42,12 @@ int main(void)
 	char *args[] = {
 		"pdhost", "--data", "/app0/assets", "--save", save, "--tmp", tmp, "--fullscreen", NULL,
 	};
-	return pdhostMain((int)(sizeof(args) / sizeof(*args)) - 1, args);
+	int status = pdhostMain((int)(sizeof(args) / sizeof(*args)) - 1, args);
+
+	// returning from main crashes a native title; the user closes it from the home screen
+	printf("[perfectdark] game exited (%d)\n", status);
+	fflush(stdout);
+	for (;;) {
+		sleep(1);
+	}
 }
