@@ -4860,6 +4860,11 @@ MenuItemHandlerResult menuhandlerMainMenuCounterOperative(s32 operation, struct 
 	return 0;
 }
 
+#ifndef PLATFORM_N64
+extern struct menudialogdef g_OnlineMenuDialog;
+void onlineMenuCheckReturn(void);
+#endif
+
 MenuDialogHandlerResult menudialogMainMenu(s32 operation, struct menudialogdef *dialogdef, union handlerdata *data)
 {
 	switch (operation) {
@@ -4871,6 +4876,10 @@ MenuDialogHandlerResult menudialogMainMenu(s32 operation, struct menudialogdef *
 				g_Menus[g_MpPlayerNum].curdialog->definition == dialogdef) {
 			g_MissionConfig.iscoop = false;
 			g_MissionConfig.isanti = false;
+#ifndef PLATFORM_N64
+			// back from an online match: straight to the match list
+			onlineMenuCheckReturn();
+#endif
 		}
 		break;
 	}
@@ -4926,6 +4935,16 @@ struct menuitem g_MainMenuMenuItems[] = {
 		0x00000003,
 		menuhandlerMainMenuCombatSimulator,
 	},
+#ifndef PLATFORM_N64
+	{
+		MENUITEMTYPE_SELECTABLE,
+		0,
+		MENUITEMFLAG_SELECTABLE_OPENSDIALOG | MENUITEMFLAG_BIGFONT | MENUITEMFLAG_LITERAL_TEXT,
+		(uintptr_t)"Online Matches",
+		0,
+		(void *)&g_OnlineMenuDialog,
+	},
+#endif
 	{
 		MENUITEMTYPE_SELECTABLE,
 		2,

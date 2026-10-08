@@ -200,46 +200,9 @@
     #online { margin-top: 20px; border-top: 1px solid var(--panel-border); padding-top: 16px; }
     #online[hidden] { display: none; }
     #online h2 { margin: 0 0 8px; font-size: 18px; letter-spacing: 0.06em; text-transform: uppercase; }
-    .field { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
-    .field input, .field select {
-      font: inherit; color: var(--text); background: var(--key-bg);
-      border: 1px solid var(--panel-border); border-radius: 6px; padding: 7px 9px;
-    }
-    .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: end; }
-    .row > .field { flex: 1 1 140px; }
-    #online-rooms { display: grid; gap: 8px; margin: 12px 0; }
-    .room {
-      display: flex; gap: 14px; align-items: center; justify-content: space-between;
-      background: var(--key-bg); border: 1px solid var(--panel-border); border-left: 4px solid var(--ok);
-      border-radius: 8px; padding: 12px 14px;
-    }
-    .room-closed { border-left-color: var(--panel-border); opacity: 0.7; }
-    .room-info { display: grid; gap: 4px; min-width: 0; }
-    .room-head { display: flex; gap: 8px; align-items: center; min-width: 0; }
-    .room-head strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 16px; }
-    .room-lock { margin-left: 6px; font-size: 13px; }
-    .room-pill { flex: none; font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; padding: 2px 8px; border-radius: 999px; }
-    .pill-open { background: rgba(79, 180, 119, 0.18); color: var(--ok); }
-    .pill-full { background: rgba(240, 180, 90, 0.18); color: #f0b45a; }
-    .pill-ended { background: rgba(139, 149, 163, 0.18); color: var(--muted); }
-    .room-sub { font-size: 13px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .room-slots { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
-    .pips { display: inline-flex; gap: 4px; }
-    .pip { width: 14px; height: 14px; border-radius: 3px; border: 2px solid var(--ok); }
-    .pip-taken { background: var(--muted); border-color: var(--muted); }
-    .room-closed .pip { border-color: var(--muted); }
-    .free { font-weight: 700; font-size: 14px; }
-    .free-yes { color: var(--ok); }
-    .free-no { color: var(--muted); }
-    .held { color: var(--muted); font-size: 12px; }
-    .room-players { font-size: 12px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .room .join { flex: none; min-width: 86px; }
     button.primary { background: var(--accent); border-color: var(--accent); font-weight: 700; }
     button.primary:hover:not(:disabled) { background: var(--accent-hover); border-color: var(--accent-hover); }
-    #online-create { display: grid; gap: 10px; margin-top: 10px; padding: 12px; border: 1px solid var(--panel-border); border-radius: 8px; }
-    #online-create[hidden] { display: none; }
-    .check { display: flex; gap: 8px; align-items: center; font-size: 13px; color: var(--muted); }
-    #online-rejoin { width: 100%; margin-top: 10px; border-color: var(--ok); }
+    #online-rejoin { border-color: var(--ok); }
     #online-rejoin[hidden] { display: none; }
 
     /* in a match: the view is 16:9 (the same for every player), letterboxed in the window */
@@ -361,44 +324,13 @@
       <section id="online" hidden>
         <h2>Online</h2>
         <p id="online-status" class="note" role="status"></p>
-        <div class="row">
-          <label class="field">Your name
-            <input id="online-name" maxlength="12" placeholder="Agent" autocomplete="nickname">
-          </label>
-          <button id="online-create-toggle" type="button">Create match…</button>
+        <p class="note">Start the game and choose <strong>Online Matches</strong> in the Perfect Menu to see,
+          create and join matches. Up to 4 players per match, plus bots. You can leave and rejoin within a
+          minute and keep your score.</p>
+        <div class="actions">
+          <button id="online-rejoin" type="button" hidden><span id="online-rejoin-text"></span> Rejoin it</button>
+          <button id="online-back" type="button" hidden>Back to the game</button>
         </div>
-        <button id="online-rejoin" type="button" hidden><span id="online-rejoin-text"></span> Rejoin it</button>
-
-        <form id="online-create" hidden>
-          <label class="field">Match name <input name="roomname" maxlength="32" placeholder="Combat Simulator"></label>
-          <div class="row">
-            <label class="field">Arena <select name="stage"></select></label>
-            <label class="field">Scenario <select name="scenario"></select></label>
-          </div>
-          <div class="row">
-            <label class="field">Time limit (min) <input name="timelimit" type="number" min="1" max="20" value="10"></label>
-            <label class="field">Kill limit (0 = none) <input name="scorelimit" type="number" min="0" max="100" value="0"></label>
-          </div>
-          <div class="row">
-            <label class="field">Weapons <select name="weaponset"></select></label>
-            <label class="field">Bots <input name="bots" type="number" min="0" max="8" value="2"></label>
-            <label class="field">Bot skill
-              <select name="botDifficulty">
-                <option value="0">Meat</option><option value="1">Easy</option><option value="2" selected>Normal</option>
-                <option value="3">Hard</option><option value="4">Perfect</option><option value="5">Dark</option>
-              </select>
-            </label>
-          </div>
-          <div class="row">
-            <label class="check"><input name="teams" type="checkbox"> Teams</label>
-            <label class="field">Password (optional) <input name="password" maxlength="32" autocomplete="off"></label>
-          </div>
-          <button type="submit" class="primary">Create and join</button>
-        </form>
-
-        <div id="online-rooms"></div>
-        <p id="online-empty" class="note">No matches running. Create one!</p>
-        <p class="note">Up to 4 players per match, plus bots. You can leave and rejoin within a minute and keep your score.</p>
       </section>
 
       <details>
@@ -459,7 +391,7 @@
         <thead><tr><th>#</th><th>Player</th><th>Kills</th><th>Deaths</th><th>Suicides</th></tr></thead>
         <tbody id="net-results-body"></tbody>
       </table>
-      <div class="actions"><button id="net-results-back" type="button">Back to the lobby</button></div>
+      <div class="actions"><button id="net-results-back" type="button">Back to the game</button></div>
     </div>
   </div>
 

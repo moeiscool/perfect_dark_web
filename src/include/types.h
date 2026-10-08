@@ -3295,7 +3295,11 @@ struct menuitemdata_dropdown {
 };
 
 struct menuitemdata_keyboard {
+#ifdef PLATFORM_N64
 	char string[MPSETUP_MAXNAME+1];
+#else
+	char string[64]; // room for server addresses in the online menu
+#endif
 	s8 col;
 	s8 row;
 	u8 capslock : 1;      // Pressed A on caps button

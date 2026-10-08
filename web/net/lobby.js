@@ -1,10 +1,11 @@
 // Multiplayer lobby: WebSocket endpoint /net on the web server. Keeps the list of rooms (matches),
 // creates them, and routes players' messages to their match. See web/net/match.js.
 //
-// Client -> server JSON: hello {name, clientId, build}, create {settings}, join {roomId, token, password},
+// Client -> server JSON: hello {name, clientId, build}, create {settings, join}, join {roomId, token, password},
 //                        leave, hash {tick, hash}, ping {t}
 // Client -> server binary: [3][netinput]
-// Server -> client JSON: welcome, rooms {rooms}, joined {roomId, slot, token, match, settings},
+// Server -> client JSON: welcome, rooms {rooms}, created {roomId} (create with join: false),
+//                        joined {roomId, slot, token, match, settings},
 //                        name {tick, slot, name}, ended {results}, resync, left, error {message}, pong {t}
 // Server -> client binary: [1][tick packet], [2][u32 tick][deflate-raw snapshot]
 'use strict';
@@ -151,6 +152,9 @@ class Lobby {
         client.name = String(msg.name || 'Agent').slice(0, 12);
         client.clientId = String(msg.clientId || '').slice(0, 64);
         if (msg.build && this.buildId && msg.build !== this.buildId) {
+          this.reloadBuild(); // the build may have been replaced since start-up
+        }
+        if (msg.build && this.buildId && msg.build !== this.buildId) {
           this.send(client, { type: 'error', code: 'build', message: 'The game was updated. Please reload the page.' });
           return;
         }
@@ -166,7 +170,7 @@ class Lobby {
         break;
 
       case 'create':
-        this.create(client, msg.settings).catch((e) => this.send(client, { type: 'error', message: e.message || String(e) }));
+        this.create(client, msg.settings, msg.join !== false).catch((e) => this.send(client, { type: 'error', message: e.message || String(e) }));
         break;
 
       case 'join':
@@ -197,7 +201,8 @@ class Lobby {
     }
   }
 
-  async create(client, rawSettings) {
+  // join: false is for the game's Online menu, which joins after the page reloads into the match
+  async create(client, rawSettings, join) {
     if (!this.enabled) {
       throw new Error('Online matches aren\'t available on this server.');
     }
@@ -231,7 +236,11 @@ class Lobby {
 
     room.idleSince = Date.now();
     room.idleTimer = setInterval(() => this.checkIdle(room), 10 * 1000);
-    this.join(client, { roomId: id, password: settings.password });
+    if (join) {
+      this.join(client, { roomId: id, password: settings.password });
+    } else {
+      this.send(client, { type: 'created', roomId: id });
+    }
   }
 
   join(client, msg) {
