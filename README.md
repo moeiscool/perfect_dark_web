@@ -44,7 +44,7 @@ There are minor graphics- and gameplay-related issues, and possibly occasional c
 * MacOS: x86_64 (OS 10.9+), arm64 (OS 11.0+)
 * Nintendo Switch: arm64
 * Web browsers (WebAssembly), with online multiplayer: play at <https://perfectdark.m03.ca>
-* PS5 (jailbroken, experimental) and other native hosts of the web build: see [ps5/](ps5/README.md) and [native_host/](native_host/README.md)
+* PS5 (jailbroken, experimental), Android and other native hosts of the web build: see [ps5/](ps5/README.md), [android/](android/README.md) and [native_host/](native_host/README.md)
 
 ## Play in your browser
 
@@ -313,6 +313,7 @@ Testing tools: `node web/net/selftest.js <rom>` checks determinism and snapshots
 Online matches need every player to run the identical game build, so other platforms run the web build itself:
 
 * [native_host/](native_host/README.md) translates `pd.wasm` to C with wasm2c and runs it natively. It is tested on Linux, where it gives the same results as the browser and shares matches with browser players.
+* [android/](android/README.md) builds it as an Android APK with touch controls, controllers and keyboard/mouse.
 * [ps5/](ps5/README.md) builds it as a PS5 folder title for jailbroken consoles, with online play and split screen for up to 4 controllers. The title builds, but hasn't been run on a console yet.
 
 #### Legal
