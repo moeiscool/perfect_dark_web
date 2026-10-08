@@ -18,7 +18,8 @@ Linux for testing.
 | `src/gl.c` | the ~70 GL calls the renderer makes. Wasm addresses become native pointers, and GLSL ES 3.00 shaders get a native `#version`. |
 | `src/platform_sdl.c` | window, GL 3.3 context, keyboard, mouse, up to 8 game controllers and audio, on SDL2 |
 | `src/platform_null.c` | no window, input or audio (`--headless` runs) |
-| `src/net.c` | netplay ticks (`--replay`, for now) and the lobby transport |
+| `src/net.c` | online play: the lobby transport of the Online menu and the match client (a C port of `web/net-client.js`), plus `--replay` |
+| `src/ws.c`, `src/json.c` | WebSocket client (TLS through mbedTLS) and a small JSON reader |
 
 ## Building (Linux)
 
@@ -31,7 +32,7 @@ cmake -S wabt -B wabt/build -DBUILD_TESTS=OFF && cmake --build wabt/build --targ
 web/build.sh
 
 # the host; PDHOST_PLATFORM=null builds a headless one without SDL
-sudo apt install libsdl2-dev
+sudo apt install libsdl2-dev zlib1g-dev   # mbedTLS is fetched by CMake
 cmake -S native_host -B build-native -DWABT_DIR=$PWD/wabt
 cmake --build build-native -j
 ```
@@ -43,6 +44,22 @@ Put your NTSC v1.1 ROM in a data directory as `pd.ntsc-final.z64`:
 ```
 build-native/pdhost --data data --save save [--fullscreen] [game options, eg. --skip-intro]
 ```
+
+### Online
+
+The **Online Matches** menu works the same as in the browser. The default lobby is
+`perfectdarklobby.m03.ca`; the CMake option `PDHOST_DEFAULT_LOBBY` changes it.
+
+* **Server addresses:**
+  * A host name alone uses `wss://` (port 443).
+  * `host:port` uses `ws://`, except ports 443, 8443 and 9443.
+  * A full `ws://` or `wss://` URL is used as is.
+* **Certificates** aren't checked, since consoles have no CA store.
+* **Joining:** picking a match restarts the game instance into it, as the browser reloads the page.
+* **Leaving:** hold **Back + Start** on a controller (or **F10**) for a second and a half. The end of a match also takes you back to the Online menu.
+* **Testing:** `--server HOST --join ROOM [--name NAME] [--password PW]` joins a match at startup.
+
+Native players and browser players share matches on both the Node server (`web/server.js`) and the Cloudflare relay (`cloudlare_worker_server/`). This was tested on both: the native host joined from the server's snapshot or from a browser's, sent its own snapshot to a browser that rejoined, and the state checks agreed with no desyncs.
 
 ### Checking that it computes the same game as the browser
 

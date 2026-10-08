@@ -11,6 +11,7 @@ static SDL_Window *window;
 static SDL_GLContext glctx;
 static SDL_AudioDeviceID audioDev;
 static Uint64 perfFreq;
+static int resendPads;
 
 // controllers by pad id (the game's "device index" order); a slot is freed when its pad goes away
 static SDL_GameController *pads[PDHOST_MAX_PADS];
@@ -139,9 +140,36 @@ static int padSlot(SDL_JoystickID inst)
 	return -1;
 }
 
+void platResendPads(void)
+{
+	resendPads = 0;
+	for (int i = 0; i < PDHOST_MAX_PADS; i++) {
+		if (pads[i]) {
+			resendPads |= 1 << i;
+		}
+	}
+}
+
+int platKeyHeld(int scancode)
+{
+	int n = 0;
+	const Uint8 *keys = SDL_GetKeyboardState(&n);
+	return scancode >= 0 && scancode < n && keys[scancode];
+}
+
 int32_t platPollEvent(int32_t *ev)
 {
 	SDL_Event e;
+
+	for (int i = 0; resendPads && i < PDHOST_MAX_PADS; i++) {
+		if (resendPads & (1 << i)) {
+			resendPads &= ~(1 << i);
+			memset(ev, 0, 8 * sizeof(*ev));
+			ev[0] = PDHOST_EV_PADADDED;
+			ev[1] = i;
+			return 1;
+		}
+	}
 
 	while (SDL_PollEvent(&e)) {
 		memset(ev, 0, 8 * sizeof(*ev));

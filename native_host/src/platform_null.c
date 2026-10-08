@@ -40,3 +40,5 @@ int32_t platAudioOpen(int32_t freq, int32_t channels) { return 0; }
 void platAudioQueue(const void *data, int32_t bytes) { }
 int32_t platAudioQueued(void) { return 0; }
 void platAudioPause(int32_t on) { }
+int platKeyHeld(int scancode) { return 0; }
+void platResendPads(void) { }

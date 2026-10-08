@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdarg.h>
+#include <setjmp.h>
 #include "host.h"
 
 w2c_pd g_pd;
@@ -9,6 +10,8 @@ struct hostopts g_HostOpts;
 
 static struct w2c_env g_Env;
 static struct w2c_wasi__snapshot__preview1 g_Wasi;
+
+static void runInstance(const char **args, int nargs);
 
 void hostLog(const char *fmt, ...)
 {
@@ -49,15 +52,17 @@ static void usage(void)
 		"  --save DIR     where saves and settings go (default: save)\n"
 		"  --tmp DIR      scratch files (default: DIR of --save + /tmp)\n"
 		"  --replay FILE  run a recorded match (web/net/headless.js --record) and print its state hashes\n"
+		"  --join ROOM    join that online match right away (with --server HOST, --name NAME, --password PW)\n"
 		"Game options are passed on, eg. --skip-intro, --headless, --net-match /data/match.cfg\n");
 }
 
 int main(int argc, char **argv)
 {
 	// game arguments: the same layout the browser uses (web/pd-web.js)
-	const char *gameArgs[64] = { "pd", "--basedir", "/data", "--savedir", "/save" };
+	static const char *gameArgs[64] = { "pd", "--basedir", "/data", "--savedir", "/save" };
 	int ngame = 5;
 	static char tmpDefault[1024];
+	const char *joinServer = NULL, *joinRoom = NULL, *joinPassword = NULL, *joinName = NULL;
 
 	g_HostOpts.dataDir = "data";
 	g_HostOpts.saveDir = "save";
@@ -71,6 +76,14 @@ int main(int argc, char **argv)
 			g_HostOpts.tmpDir = argv[++i];
 		} else if (!strcmp(argv[i], "--replay") && i + 1 < argc) {
 			g_HostOpts.replay = argv[++i];
+		} else if (!strcmp(argv[i], "--server") && i + 1 < argc) {
+			joinServer = argv[++i];
+		} else if (!strcmp(argv[i], "--join") && i + 1 < argc) {
+			joinRoom = argv[++i];
+		} else if (!strcmp(argv[i], "--password") && i + 1 < argc) {
+			joinPassword = argv[++i];
+		} else if (!strcmp(argv[i], "--name") && i + 1 < argc) {
+			joinName = argv[++i];
 		} else if (!strcmp(argv[i], "--fullscreen")) {
 			g_HostOpts.fullscreen = 1;
 		} else if (!strcmp(argv[i], "--help") || !strcmp(argv[i], "-h")) {
@@ -91,26 +104,70 @@ int main(int argc, char **argv)
 	}
 
 	wasm_rt_init();
-	wasm2c_pd_instantiate(&g_pd, &g_Env, &g_Wasi);
 
-	// what Emscripten's runtime does before main: static constructors, then main(argc, argv)
-	// with the arguments on the wasm stack
-	w2c_pd_0x5F_wasm_call_ctors(&g_pd);
-
-	uint32_t argvAddr = w2c_pd_0x5Femscripten_stack_alloc(&g_pd, (u32)((ngame + 1) * 4));
-	for (int i = 0; i < ngame; i++) {
-		const size_t len = strlen(gameArgs[i]) + 1;
-		const uint32_t s = w2c_pd_0x5Femscripten_stack_alloc(&g_pd, (u32)len);
-		memcpy(wmem() + s, gameArgs[i], len);
-		wstore32(argvAddr + i * 4, s);
+	if (joinRoom) {
+		netRequestJoin(joinServer, joinRoom, joinPassword, joinName);
 	}
-	wstore32(argvAddr + ngame * 4, 0);
 
-	const int ret = (int)w2c_pd_0x5F_main_argc_argv(&g_pd, (u32)ngame, argvAddr);
+	// Each game runs in a fresh instance of pd.wasm. Joining or leaving an online match ends the
+	// running one (hostRestart) and starts the next, as the browser reloads the page.
+	for (;;) {
+		const char *args[72];
+		int nargs = 0;
+		char cfg[128], slot[16];
 
+		for (int i = 0; i < ngame; i++) {
+			args[nargs++] = gameArgs[i];
+		}
+
+		const int matchSlot = netPrepareLaunch(cfg, sizeof(cfg));
+		if (matchSlot >= 0) {
+			snprintf(slot, sizeof(slot), "%d", matchSlot);
+			args[nargs++] = "--net-match";
+			args[nargs++] = cfg;
+			args[nargs++] = "--net-slot";
+			args[nargs++] = slot;
+		}
+
+		runInstance(args, nargs);
+	}
+}
+
+static jmp_buf g_RestartJmp;
+
+void hostRestart(void)
+{
+	longjmp(g_RestartJmp, 1);
+}
+
+static void runInstance(const char **args, int nargs)
+{
+	wasm2c_pd_instantiate(&g_pd, &g_Env, &g_Wasi);
+	platResendPads();
+
+	if (setjmp(g_RestartJmp) == 0) {
+		// what Emscripten's runtime does before main: static constructors, then main(argc, argv)
+		// with the arguments on the wasm stack
+		w2c_pd_0x5F_wasm_call_ctors(&g_pd);
+
+		const uint32_t argvAddr = w2c_pd_0x5Femscripten_stack_alloc(&g_pd, (u32)((nargs + 1) * 4));
+		for (int i = 0; i < nargs; i++) {
+			const size_t len = strlen(args[i]) + 1;
+			const uint32_t s = w2c_pd_0x5Femscripten_stack_alloc(&g_pd, (u32)len);
+			memcpy(wmem() + s, args[i], len);
+			wstore32(argvAddr + i * 4, s);
+		}
+		wstore32(argvAddr + nargs * 4, 0);
+
+		const int ret = (int)w2c_pd_0x5F_main_argc_argv(&g_pd, (u32)nargs, argvAddr);
+		exit(ret);
+	}
+
+	// left the instance from inside an import; its C stack frames are gone
+#if WASM_RT_STACK_DEPTH_COUNT
+	wasm_rt_call_stack_depth = 0;
+#endif
 	wasm2c_pd_free(&g_pd);
-	wasm_rt_free();
-	return ret;
 }
 
 /* ------------------------------------------------------------------------

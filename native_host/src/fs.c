@@ -60,7 +60,7 @@ static int werrno(int e)
  * paths
  * ------------------------------------------------------------------------ */
 
-static void mkdirs(const char *path)
+void hostMkdirs(const char *path)
 {
 	char tmp[1024];
 	snprintf(tmp, sizeof(tmp), "%s", path);
@@ -176,7 +176,7 @@ u32 w2c_env_0x5F_syscall_openat(struct w2c_env *e, u32 dirfd, u32 path, u32 flag
 		char *slash = strrchr(dir, '/');
 		if (slash && slash != dir) {
 			*slash = '\0';
-			mkdirs(dir);
+			hostMkdirs(dir);
 		}
 	}
 

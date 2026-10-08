@@ -71,6 +71,9 @@ static inline void wstore32(uint32_t addr, uint32_t v)
 uint32_t hostNewString(const char *s);
 
 void hostLog(const char *fmt, ...);
+void hostMkdirs(const char *path);
+// ends the running game instance and starts the next one (a match, or back to the menu)
+void hostRestart(void) __attribute__((noreturn));
 void hostFatal(const char *fmt, ...);
 
 // platform layer (platform_sdl.c, or a console's own)
@@ -96,6 +99,12 @@ void platAudioQueue(const void *data, int32_t bytes);
 int32_t platAudioQueued(void);
 void platAudioPause(int32_t on);
 void platMessage(const char *title, const char *text);
+int platKeyHeld(int scancode);
+void platResendPads(void);   // a new game instance must be told about the connected controllers
+
+// net.c
+int netPrepareLaunch(char *cfgGamePath, size_t size);
+void netRequestJoin(const char *server, const char *room, const char *password, const char *name);
 
 // gl.c
 int glLoadFunctions(void);
