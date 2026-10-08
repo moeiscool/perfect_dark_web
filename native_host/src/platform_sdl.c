@@ -1,11 +1,14 @@
 // Platform layer on SDL2: window and GL context, keyboard, mouse, game controllers, audio.
-// Used on Linux and on PS5 (SDL2 port from ps5-payload-dev). The game's own SDL code runs inside
+// Used on Linux, Android (PDHOST_GLES, PDHOST_TOUCH) and on PS5 (SDL2 port from ps5-payload-dev). The game's own SDL code runs inside
 // pd.wasm on port/src/web_sdl.c, which speaks the same SDL semantics, so this mostly forwards.
 #include <stdio.h>
 #include <string.h>
 #include <SDL.h>
 #include "host.h"
 #include "../../port/include/pdhost.h"
+#ifdef PDHOST_TOUCH
+#include "touch.h"
+#endif
 
 static SDL_Window *window;
 static SDL_GLContext glctx;
@@ -17,9 +20,28 @@ static int resendPads;
 static SDL_GameController *pads[PDHOST_MAX_PADS];
 static SDL_JoystickID padInstance[PDHOST_MAX_PADS];
 
+// the game's shaders are GLSL ES 3.00; desktop GL needs a different #version (NULL: keep it)
 #ifndef PDHOST_GLSL_VERSION
+#ifdef PDHOST_GLES
+#define PDHOST_GLSL_VERSION NULL
+#else
 #define PDHOST_GLSL_VERSION "330 core"
 #endif
+#endif
+
+static int freePadSlot(void)
+{
+	for (int i = 0; i < PDHOST_MAX_PADS; i++) {
+		if (!pads[i]
+#ifdef PDHOST_TOUCH
+				&& i != touchSlot()
+#endif
+				) {
+			return i;
+		}
+	}
+	return -1;
+}
 
 int platInit(void)
 {
@@ -27,6 +49,14 @@ int platInit(void)
 	SDL_SetMainReady();
 #endif
 	SDL_SetHint(SDL_HINT_GAMECONTROLLER_USE_BUTTON_LABELS, "0");
+#ifdef PDHOST_TOUCH
+	// touches drive the on-screen controller, not the mouse cursor
+	SDL_SetHint(SDL_HINT_TOUCH_MOUSE_EVENTS, "0");
+#endif
+#ifdef __ANDROID__
+	SDL_SetHint(SDL_HINT_ORIENTATIONS, "LandscapeLeft LandscapeRight");
+	SDL_SetHint(SDL_HINT_ANDROID_TRAP_BACK_BUTTON, "1");
+#endif
 	if (SDL_Init(SDL_INIT_TIMER | SDL_INIT_EVENTS | SDL_INIT_GAMECONTROLLER) != 0) {
 		fprintf(stderr, "SDL_Init: %s\n", SDL_GetError());
 		return -1;
@@ -74,9 +104,15 @@ int32_t platGlCreate(int32_t depth, int32_t stencil)
 		return 0;
 	}
 
+#ifdef PDHOST_GLES
+	SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
+	SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 0);
+	SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_ES);
+#else
 	SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
 	SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 3);
 	SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
+#endif
 	SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, depth > 0 ? depth : 24);
 	SDL_GL_SetAttribute(SDL_GL_STENCIL_SIZE, stencil > 0 ? stencil : 8);
 	SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
@@ -104,6 +140,11 @@ int32_t platGlCreate(int32_t depth, int32_t stencil)
 void platGlSwap(void)
 {
 	if (window) {
+#ifdef PDHOST_TOUCH
+		int w = 0, h = 0;
+		SDL_GL_GetDrawableSize(window, &w, &h);
+		touchDraw(w, h);
+#endif
 		SDL_GL_SwapWindow(window);
 	}
 }
@@ -151,6 +192,9 @@ void platResendPads(void)
 			resendPads |= 1 << i;
 		}
 	}
+#ifdef PDHOST_TOUCH
+	touchResend();
+#endif
 }
 
 int platKeyHeld(int scancode)
@@ -174,14 +218,43 @@ int32_t platPollEvent(int32_t *ev)
 		}
 	}
 
+#ifdef PDHOST_TOUCH
+	if (touchPollEvent(ev)) {
+		return 1;
+	}
+#endif
+
 	while (SDL_PollEvent(&e)) {
 		memset(ev, 0, 8 * sizeof(*ev));
+
+#ifdef PDHOST_TOUCH
+		if (e.type == SDL_FINGERDOWN || e.type == SDL_FINGERUP || e.type == SDL_FINGERMOTION) {
+			int w = 0, h = 0;
+			if (window) {
+				SDL_GL_GetDrawableSize(window, &w, &h);
+			}
+			touchHandleEvent(&e, w, h, freePadSlot);
+			if (touchPollEvent(ev)) {
+				return 1;
+			}
+			continue;
+		}
+		// a physical controller or keyboard is in use: get the on-screen controls out of the way
+		if (e.type == SDL_KEYDOWN || e.type == SDL_CONTROLLERBUTTONDOWN
+				|| (e.type == SDL_MOUSEBUTTONDOWN && e.button.which != SDL_TOUCH_MOUSEID)) {
+			touchHide();
+		}
+#endif
 
 		switch (e.type) {
 		case SDL_KEYDOWN:
 		case SDL_KEYUP:
 			ev[0] = e.type == SDL_KEYDOWN ? PDHOST_EV_KEYDOWN : PDHOST_EV_KEYUP;
 			ev[1] = e.key.keysym.scancode;
+			// Android's back button / gesture pauses, like Escape
+			if (ev[1] == SDL_SCANCODE_AC_BACK) {
+				ev[1] = SDL_SCANCODE_ESCAPE;
+			}
 			ev[2] = e.key.keysym.mod;
 			ev[3] = e.key.repeat;
 			return 1;
@@ -222,8 +295,9 @@ int32_t platPollEvent(int32_t *ev)
 				SDL_GameControllerClose(gc);
 				break;
 			}
-			for (int i = 0; i < PDHOST_MAX_PADS; i++) {
-				if (!pads[i]) {
+			const int i = freePadSlot();
+			if (i >= 0) {
+				{
 					pads[i] = gc;
 					padInstance[i] = inst;
 					ev[0] = PDHOST_EV_PADADDED;
@@ -312,6 +386,11 @@ void platShowCursor(int32_t on)
 
 int32_t platPadButton(int32_t id, int32_t button)
 {
+#ifdef PDHOST_TOUCH
+	if (id >= 0 && id == touchSlot()) {
+		return touchPadButton(button);
+	}
+#endif
 	if (id < 0 || id >= PDHOST_MAX_PADS || !pads[id] || button < 0 || button >= SDL_CONTROLLER_BUTTON_MAX) {
 		return 0;
 	}
@@ -320,6 +399,11 @@ int32_t platPadButton(int32_t id, int32_t button)
 
 int32_t platPadAxis(int32_t id, int32_t axis)
 {
+#ifdef PDHOST_TOUCH
+	if (id >= 0 && id == touchSlot()) {
+		return touchPadAxis(axis);
+	}
+#endif
 	if (id < 0 || id >= PDHOST_MAX_PADS || !pads[id] || axis < 0 || axis >= SDL_CONTROLLER_AXIS_MAX) {
 		return 0;
 	}
