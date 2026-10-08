@@ -13,7 +13,7 @@ const root = resolve(here, '..');
 const buildDir = resolve(process.argv[2] || join(root, '..', 'build-web'));
 const publicDir = join(root, 'public');
 
-const FILES = ['index.html', 'pd-web.js', 'nethost.js', 'net-client.js', 'manifest.webmanifest', 'sw.js',
+const FILES = ['index.html', 'pd-web.js', 'pd-host.js', 'nethost.js', 'net-client.js', 'manifest.webmanifest', 'sw.js',
   'icons', 'pd.js', 'pd.wasm', 'pd.snap.json'];
 
 for (const f of FILES) {

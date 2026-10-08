@@ -26,7 +26,7 @@ fi
 STAGE="$(mktemp -d)"
 trap 'rm -rf "$STAGE"' EXIT
 mkdir -p "$STAGE/app/build-web" "$STAGE/app/web"
-for f in index.html pd-web.js nethost.js net-client.js manifest.webmanifest sw.js icons pd.js pd.wasm pd.snap.json; do
+for f in index.html pd-web.js pd-host.js nethost.js net-client.js manifest.webmanifest sw.js icons pd.js pd.wasm pd.snap.json; do
   cp -r "$BUILD_DIR/$f" "$STAGE/app/build-web/"
 done
 cp -r "$SRC_DIR/web/server.js" "$SRC_DIR/web/net" "$SRC_DIR/web/package.json" "$STAGE/app/web/"

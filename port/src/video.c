@@ -16,7 +16,7 @@
 
 #ifdef PLATFORM_WEB
 #include <emscripten.h>
-#include <emscripten/html5.h>
+#include "pdhost.h"
 
 // The game runs one long blocking loop. Once per frame we suspend it (via ASYNCIFY) until the
 // browser's next animation frame, which lets the canvas present, input/gamepad events arrive,
@@ -139,7 +139,7 @@ void videoStartFrame(void)
 #ifdef PLATFORM_WEB
 	// the browser dropped the WebGL context (the page reloads when it's visible again); keep
 	// running the game, just don't draw
-	if (emscripten_is_webgl_context_lost(emscripten_webgl_get_current_context())) {
+	if (pdhost_gl_context_lost()) {
 		drawThisFrame = false;
 	}
 #endif

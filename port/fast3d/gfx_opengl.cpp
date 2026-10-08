@@ -21,14 +21,16 @@
 #include "gfx_pc.h"
 
 #ifdef __EMSCRIPTEN__
-#include <emscripten/html5.h>
+extern "C" {
+#include "pdhost.h"
+}
 #endif
 
 // the browser can drop the WebGL context (eg. in a background tab); every GL call fails until the
 // page recreates it, which isn't a reason to stop the game (online matches keep simulating)
 static bool gl_context_lost(void) {
 #ifdef __EMSCRIPTEN__
-    return emscripten_is_webgl_context_lost(emscripten_webgl_get_current_context());
+    return pdhost_gl_context_lost() != 0;
 #else
     return false;
 #endif

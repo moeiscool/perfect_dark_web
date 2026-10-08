@@ -21,6 +21,7 @@
 
 #ifdef PLATFORM_WEB
 #include <emscripten.h>
+#include "pdhost.h"
 #endif
 
 /**
@@ -84,11 +85,7 @@ EM_ASYNC_JS(void, netJsWaitForTick, (void), {
 static void netHostReportHash(u32 tick, u32 hash)
 {
 #ifdef PLATFORM_WEB
-	EM_ASM({
-		if (Module.onNetHash) {
-			Module.onNetHash($0 >>> 0, $1 >>> 0);
-		}
-	}, tick, hash);
+	pdhost_net_hash(tick, hash);
 #else
 	sysLogPrintf(LOG_NOTE, "net: tick %u hash %08x", tick, hash);
 #endif
@@ -97,11 +94,7 @@ static void netHostReportHash(u32 tick, u32 hash)
 static void netHostReportLocalInput(void)
 {
 #ifdef PLATFORM_WEB
-	EM_ASM({
-		if (Module.onNetLocalInput) {
-			Module.onNetLocalInput($0);
-		}
-	}, &netLocalInput);
+	pdhost_net_local_input(&netLocalInput);
 #endif
 }
 

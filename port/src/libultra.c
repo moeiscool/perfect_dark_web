@@ -16,6 +16,7 @@
 
 #ifdef PLATFORM_WEB
 #include <emscripten.h>
+#include "pdhost.h"
 #endif
 
 #define EEPROM_SIZE (EEP16K_MAXBLOCKS * 8)
@@ -313,11 +314,7 @@ static inline void osEeepromSave(const char *fname)
 		fsFileFree(fp);
 #ifdef PLATFORM_WEB
 		// the file only lives in memory until the page flushes it to IndexedDB; ask for that now
-		EM_ASM({
-			if (Module.onSaveWritten) {
-				Module.onSaveWritten();
-			}
-		});
+		pdhost_save_written();
 #endif
 	} else {
 		sysLogPrintf(LOG_ERROR, "could not save EEPROM to `%s`: %s", fsFullPath(fname), strerror(errno));

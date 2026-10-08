@@ -597,6 +597,8 @@
 
     const config = {
       canvas: ui.canvas,
+      // keyboard, mouse, gamepads, audio and the canvas size (web/pd-host.js)
+      pdhost: window.PDHost.create(ui.canvas),
       arguments: ['--basedir', '/data', '--savedir', SAVE_DIR, ...extraArgs(), ...(opts.extraArgs || [])],
       locateFile: (p) => (build ? `${p}?v=${build}` : p),
       ...(opts.hooks || {}),
@@ -651,12 +653,6 @@
     ui.overlay.hidden = true;
     document.body.classList.add('is-running');
     ui.canvas.focus();
-
-    // SDL only resizes its canvas on window resize events; nudge it once the window exists
-    // so the game renders at the full page size instead of 640x480
-    for (const delay of [250, 1000, 3000]) {
-      setTimeout(() => window.dispatchEvent(new Event('resize')), delay);
-    }
 
     setInterval(syncSaves, SAVE_SYNC_INTERVAL_MS);
     setInterval(saveConfig, CONFIG_SAVE_INTERVAL_MS);

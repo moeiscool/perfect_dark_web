@@ -38,6 +38,7 @@ __attribute__((dllexport)) u32 AmdPowerXpressRequestHighPerformance = 1;
 
 #ifdef PLATFORM_WEB
 #include <emscripten.h>
+#include "pdhost.h"
 #endif
 
 // figure out how to yield
@@ -216,11 +217,7 @@ void sysFatalError(const char *fmt, ...)
 	fflush(stderr);
 
 #ifdef PLATFORM_WEB
-	EM_ASM({
-		if (Module.onFatalError) {
-			Module.onFatalError(UTF8ToString($0));
-		}
-	}, errmsg);
+	pdhost_fatal(errmsg);
 #else
 	SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Fatal error", errmsg, NULL);
 #endif

@@ -211,8 +211,11 @@ if (APPLE)
 elseif(EMSCRIPTEN)
   # Emscripten is clang, which doesn't know -Wno-format-truncation either
   add_compile_options(-Wno-unknown-warning-option)
-  # Emscripten ports: SDL2 (also provides the GLES3/WebGL2 headers) and zlib
-  add_compile_options(-sUSE_SDL=2 -sUSE_ZLIB=1)
+  # zlib from Emscripten's ports. SDL isn't linked: port/src/web_sdl.c implements the part of SDL2
+  # the port uses on the host interface (port/include/pdhost.h), so only SDL's headers are needed
+  # (web/build.sh fetches them with embuilder)
+  add_compile_options(-sUSE_ZLIB=1)
+  include_directories(SYSTEM "${EMSCRIPTEN_SYSROOT}/include/SDL2")
 else()
   # This warning is not recognized by XCode/Clang for some reason.
   add_compile_options(-Wno-format-truncation)
@@ -224,15 +227,15 @@ set(LIBS )
 
 if(EMSCRIPTEN)
 
-# SDL2, zlib and GL all come from Emscripten ports and are linked through the flags below
+# zlib comes from Emscripten's ports; GL is Emscripten's WebGL library; everything else platform
+# specific goes through the pdhost_* imports (web/pdhost-lib.js in the browser)
 set(WEB_LINK_FLAGS
-  -sUSE_SDL=2
   -sUSE_ZLIB=1
-  # WebGL2 == GLES 3.0; glad loads its function pointers through SDL_GL_GetProcAddress
+  --js-library ${CMAKE_SOURCE_DIR}/web/pdhost-lib.js
+  # WebGL2 == GLES 3.0; glad gets the functions the renderer uses from web_sdl.c
   -sMIN_WEBGL_VERSION=2
   -sMAX_WEBGL_VERSION=2
   -sFULL_ES3=1
-  -sGL_ENABLE_GET_PROC_ADDRESS=1
   # the game runs a blocking main loop; ASYNCIFY lets it yield to the browser every frame
   -sASYNCIFY=1
   -sASYNCIFY_STACK_SIZE=131072
@@ -434,6 +437,7 @@ if(EMSCRIPTEN)
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
       ${CMAKE_SOURCE_DIR}/web/index.html
       ${CMAKE_SOURCE_DIR}/web/pd-web.js
+      ${CMAKE_SOURCE_DIR}/web/pd-host.js
       ${CMAKE_SOURCE_DIR}/web/net/nethost.js
       ${CMAKE_SOURCE_DIR}/web/net-client.js
       ${CMAKE_SOURCE_DIR}/web/manifest.webmanifest

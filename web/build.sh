@@ -24,6 +24,9 @@ if ! command -v emcc >/dev/null 2>&1; then
   source "$EMSDK/emsdk_env.sh" >/dev/null
 fi
 
+# SDL2's headers (the build implements the part of SDL it uses itself, see port/src/web_sdl.c)
+embuilder build sdl2 >/dev/null
+
 emcmake cmake -S "$SRC_DIR" -B "$BUILD_DIR" -DROMID="$ROMID" -DCMAKE_BUILD_TYPE="$BUILD_TYPE"
 cmake --build "$BUILD_DIR" -j"$(nproc 2>/dev/null || echo 4)"
 
