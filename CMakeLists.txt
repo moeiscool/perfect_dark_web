@@ -435,7 +435,10 @@ if(EMSCRIPTEN)
       ${CMAKE_SOURCE_DIR}/web/pd-web.js
       ${CMAKE_SOURCE_DIR}/web/net/nethost.js
       ${CMAKE_SOURCE_DIR}/web/net-client.js
+      ${CMAKE_SOURCE_DIR}/web/manifest.webmanifest
+      ${CMAKE_SOURCE_DIR}/web/sw.js
       ${CMAKE_BINARY_DIR}/
+    COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_SOURCE_DIR}/web/icons ${CMAKE_BINARY_DIR}/icons
     # memory ranges of the game state, for netplay snapshots
     COMMAND node ${CMAKE_SOURCE_DIR}/web/net/snapranges.js ${CMAKE_BINARY_DIR}/pd.map ${CMAKE_BINARY_DIR}/pd.snap.json
   )

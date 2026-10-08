@@ -4,6 +4,11 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Perfect Dark</title>
+  <meta name="theme-color" content="#07090c">
+  <meta name="mobile-web-app-capable" content="yes">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/icon-192.png" type="image/png">
+  <link rel="apple-touch-icon" href="icons/icon-192.png">
   <style>
     :root {
       --bg: #07090c;
@@ -155,6 +160,9 @@
     body.is-running #backup-ingame { display: inline-block; }
     body.is-running #toolbar { opacity: 0; transition: opacity 0.3s; }
     body.is-running #toolbar:hover, body.is-running #toolbar:focus-within { opacity: 0.9; }
+    /* in an app window the mouse must reach the edges freely, so the toolbar only shows on the start screen */
+    body.is-app.is-running #toolbar { display: none; }
+    body.is-app #fullscreen { display: none; }
 
     code { font: 12px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
 
@@ -315,6 +323,7 @@
 
   <div id="toolbar">
     <button id="backup-ingame" type="button" title="Download a backup of your saves and settings">Back up saves</button>
+    <button id="install-app" type="button" title="Install as an app for a full-window view without the fullscreen exit button" hidden>Install app</button>
     <button id="fullscreen" type="button" title="Toggle fullscreen">Fullscreen</button>
   </div>
 
@@ -339,6 +348,14 @@
       <p id="secure-note" class="note warn" hidden>
         Gamepads only work over HTTPS. Open <a id="secure-link" href="#"></a> instead
         (accept the certificate warning once).
+      </p>
+
+      <p id="install-note" class="note" hidden>
+        <strong>Tip:</strong> for the best full-window view, <span id="install-how">install this page as an app
+        (in Chrome, Edge or Brave: the install icon in the address bar, or menu → <em>Cast, save and share</em>
+        → <em>Install page as app</em>)</span>. Browser fullscreen (F11) shows an exit button when the mouse
+        reaches the top of the screen, which gets in the way of looking up.
+        <button id="install-app-note" type="button" hidden>Install app</button>
       </p>
 
       <section id="online" hidden>
