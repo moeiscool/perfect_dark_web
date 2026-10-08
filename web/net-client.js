@@ -257,8 +257,9 @@
         } else if (msg.code === 'build') {
           match = null;
           failJoin('That server runs a different version of the game.');
-        } else if (match && !match.module) {
-          // failed to get into the match we were trying to start
+        } else if (match && match.pending) {
+          // the server refused to let us in (once in, the game is loading or running; errors
+          // after that are only reported)
           match = null;
           clearSession();
           document.body.classList.remove('is-online');

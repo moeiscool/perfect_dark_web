@@ -353,6 +353,17 @@ export class RelayRoom {
       this.deliverSnapshot(target, this.checkpoint.tick, this.checkpoint.packed, `${reason}, checkpoint`);
       return;
     }
+    // nobody can send it right now (eg. the other players are reconnecting too); keep trying
+    target.snapshotRetries = (target.snapshotRetries || 0) + 1;
+    if (target.snapshotRetries <= 10) {
+      setTimeout(() => {
+        if (target.connected && !target.live && this.state === 'playing') {
+          this.provideSnapshot(target, reason, exclude);
+        }
+      }, 1500);
+      return;
+    }
+    target.snapshotRetries = 0;
     this.sendJson(target, { type: 'error', message: 'Nobody in the match could send its state. Try again in a moment.' });
   }
 
@@ -408,6 +419,7 @@ export class RelayRoom {
     p.live = true;
     p.suspect = false;
     this.log(`match ${this.id}: snapshot for ${p.name} (${reason}) at tick ${after}, ${(packed.length / 1048576).toFixed(2)} MiB`);
+    p.snapshotRetries = 0;
   }
 
   // names for ticks after the given one, sent before those ticks so they're queued in time
