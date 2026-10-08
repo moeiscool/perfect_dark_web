@@ -230,6 +230,57 @@
     }
   });
 
+  // ---------------------------------------------------------------------------
+  // Installing as an app. An app window has no browser UI, so the game gets the whole window and
+  // the mouse can reach the top edge, unlike F11 fullscreen with its exit button.
+
+  const appModes = ['standalone', 'fullscreen', 'window-controls-overlay', 'minimal-ui'];
+  const isApp = () => appModes.some((m) => window.matchMedia(`(display-mode: ${m})`).matches)
+    || navigator.standalone === true;
+  let installPrompt = null;
+
+  function updateInstallUi() {
+    const app = isApp();
+    document.body.classList.toggle('is-app', app);
+    $('install-note').hidden = app;
+    $('install-app').hidden = app || !installPrompt;
+    $('install-app-note').hidden = app || !installPrompt;
+    if (installPrompt) {
+      $('install-how').textContent = 'install this page as an app';
+    }
+  }
+
+  async function install() {
+    if (!installPrompt) {
+      return;
+    }
+    const prompt = installPrompt;
+    installPrompt = null;
+    prompt.prompt();
+    try { await prompt.userChoice; } catch (e) { /* ignore */ }
+    updateInstallUi();
+  }
+
+  window.addEventListener('beforeinstallprompt', (e) => {
+    e.preventDefault(); // show our own button instead of the mini-infobar
+    installPrompt = e;
+    updateInstallUi();
+  });
+  window.addEventListener('appinstalled', () => {
+    installPrompt = null;
+    toast('Installed. Open Perfect Dark from your apps for a full-window view.');
+    updateInstallUi();
+  });
+  for (const m of appModes) {
+    window.matchMedia(`(display-mode: ${m})`).addEventListener('change', updateInstallUi);
+  }
+  $('install-app').addEventListener('click', install);
+  $('install-app-note').addEventListener('click', install);
+  if ('serviceWorker' in navigator && window.isSecureContext) {
+    navigator.serviceWorker.register('sw.js').catch(() => {});
+  }
+  updateInstallUi();
+
   window.addEventListener('gamepadconnected', (e) => {
     toast(`Gamepad connected: ${e.gamepad.id.replace(/\s*\(.*$/, '')}`);
   });

@@ -53,6 +53,7 @@ const MIME = {
   '.wasm': 'application/wasm',
   '.data': 'application/octet-stream',
   '.json': 'application/json; charset=utf-8',
+  '.webmanifest': 'application/manifest+json; charset=utf-8',
   '.css': 'text/css; charset=utf-8',
   '.png': 'image/png',
   '.ico': 'image/x-icon',
@@ -60,7 +61,7 @@ const MIME = {
   '.txt': 'text/plain; charset=utf-8',
 };
 
-const COMPRESSIBLE = new Set(['.html', '.js', '.mjs', '.wasm', '.json', '.css', '.svg', '.txt', '.data']);
+const COMPRESSIBLE = new Set(['.html', '.js', '.mjs', '.wasm', '.json', '.webmanifest', '.css', '.svg', '.txt', '.data']);
 const BLOCKED = /\.(z64|v64|n64|rom|gbc|ini|log)$/i;
 
 // path -> { mtimeMs, raw, br, gzip }
