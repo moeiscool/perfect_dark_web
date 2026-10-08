@@ -178,6 +178,10 @@ function handler(req, res) {
   }
 
   const ext = path.extname(filePath).toLowerCase();
+  if (path.basename(filePath) === 'index.html') {
+    return sendPage(req, res, filePath, stat);
+  }
+
   const entry = loadFile(filePath, stat);
   const headers = {
     'Content-Type': MIME[ext] || 'application/octet-stream',
@@ -211,6 +215,43 @@ function handler(req, res) {
 
   res.writeHead(200, headers);
   res.end(req.method === 'HEAD' ? undefined : body);
+}
+
+// Adds ?v=<content hash> to the page's script URLs. Proxies and CDNs (Cloudflare sets its own
+// browser cache time on .js files) can keep serving an old script; with versioned URLs a page
+// never runs an old script against a newer game.
+function versionScripts(html, dir) {
+  return html.replace(/<script src="([^"?:]+\.js)"><\/script>/g, (tag, src) => {
+    const file = path.join(dir, src);
+    try {
+      const stat = fs.statSync(file);
+      const hash = require('node:crypto').createHash('sha1').update(loadFile(file, stat).raw).digest('hex').slice(0, 10);
+      return `<script src="${src}?v=${hash}"></script>`;
+    } catch {
+      return tag;
+    }
+  });
+}
+
+function sendPage(req, res, filePath, stat) {
+  const html = Buffer.from(versionScripts(loadFile(filePath, stat).raw.toString('utf8'), path.dirname(filePath)));
+  const etag = `"${require('node:crypto').createHash('sha1').update(html).digest('hex').slice(0, 16)}"`;
+  const headers = {
+    'Content-Type': MIME['.html'],
+    'Cache-Control': 'no-cache',
+    ETag: etag,
+    'Cross-Origin-Opener-Policy': 'same-origin',
+    'Cross-Origin-Embedder-Policy': 'require-corp',
+    'Cross-Origin-Resource-Policy': 'same-origin',
+    'X-Content-Type-Options': 'nosniff',
+  };
+  if (req.headers['if-none-match'] === etag) {
+    res.writeHead(304, headers);
+    return res.end();
+  }
+  headers['Content-Length'] = html.length;
+  res.writeHead(200, headers);
+  return res.end(req.method === 'HEAD' ? undefined : html);
 }
 
 // Returns { key, cert } for the HTTPS server, or null if none could be loaded or generated.

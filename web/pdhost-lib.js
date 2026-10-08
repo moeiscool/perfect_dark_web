@@ -33,6 +33,10 @@ addToLibrary({
     if (!canvas) {
       return 0;
     }
+    if (!Module.pdhost && Module.onFatalError) {
+      // an older cached page script that doesn't provide the host (no input, wrong canvas size)
+      Module.onFatalError('This page is out of date. Reload it (Ctrl+Shift+R) to update.');
+    }
     const handle = GL.createContext(canvas, {
       majorVersion: 2,
       minorVersion: 0,

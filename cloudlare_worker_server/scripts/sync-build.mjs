@@ -29,6 +29,14 @@ for (const f of FILES) {
   cpSync(join(buildDir, f), join(publicDir, f), { recursive: true });
 }
 
+// versioned script URLs, as web/server.js serves them: a cached old script must never run
+// against a newer game
+const indexPath = join(publicDir, 'index.html');
+writeFileSync(indexPath, readFileSync(indexPath, 'utf8').replace(/<script src="([^"?:]+\.js)"><\/script>/g, (tag, src) => {
+  const hash = createHash('sha1').update(readFileSync(join(publicDir, src))).digest('hex').slice(0, 10);
+  return `<script src="${src}?v=${hash}"></script>`;
+}));
+
 // the same headers web/server.js sends
 writeFileSync(join(publicDir, '_headers'), `/*
   Cross-Origin-Opener-Policy: same-origin
