@@ -8,6 +8,8 @@
   const MSG_TICK = 1;
   const MSG_SNAPSHOT = 2;
   const MSG_INPUT = 3;
+  const MSG_SNAPSHOT_REPLY = 4; // to a relay server: [4][u32 request id][u32 tick][deflate-raw snapshot]
+  const HASH_REPORT_TICKS = 120; // state hashes sent to the server (the game makes one every 60 ticks)
   const SESSION_KEY = 'pd-online-session';
   const NAME_KEY = 'pd-online-name';
   const CLIENT_KEY = 'pd-online-client';
@@ -222,6 +224,12 @@
         if (match) {
           match.names.push(msg);
         }
+        break;
+      case 'snapshot-request':
+        answerSnapshotRequest(msg.reqId).catch((e) => {
+          console.warn('snapshot for another player failed', e);
+          send({ type: 'snapshot-failed', reqId: msg.reqId });
+        });
         break;
       case 'resync':
         if (match) {
@@ -524,7 +532,9 @@
       buffer: [],
       names: [],
       backlog: [],
-      awaitingSnapshot: true,
+      // a relay server starts a new match on its first player's game, from tick 0
+      fresh: !!msg.fresh,
+      awaitingSnapshot: !msg.fresh,
       snapshot: null,
       live: false,
       ended: false,
@@ -542,7 +552,11 @@
         extraArgs: ['--net-match', '/net/match.cfg', '--net-slot', String(msg.slot)],
         files: { '/net/match.cfg': PDNet.matchConfigText(msg.match) },
         hooks: {
-          onNetHash: (tick, hash) => send({ type: 'hash', tick, hash }),
+          onNetHash: (tick, hash) => {
+            if (tick % HASH_REPORT_TICKS === 0) {
+              send({ type: 'hash', tick, hash });
+            }
+          },
           onNetLocalInput: (ptr) => sendInput(ptr),
         },
       });
@@ -550,6 +564,14 @@
       match.host = PDNet.attach(module);
       if (match.snapshot) {
         await applySnapshot();
+      } else if (match.fresh) {
+        match.live = true;
+        const buffered = match.buffer;
+        match.buffer = [];
+        for (const packet of buffered) {
+          pushTick(packet);
+        }
+        updateHud();
       }
       ui.hint.hidden = false;
       setTimeout(() => { ui.hint.hidden = true; }, 10000);
@@ -620,15 +642,82 @@
     m._netQueueName(n.tick, n.slot);
   }
 
+  // The server repeats a player's last input until a new one arrives, so only changes are sent,
+  // plus a heartbeat. This keeps the message count low (the Cloudflare relay pays per message).
+  const INPUT_HEARTBEAT_MS = 1000;
+  let lastInput = null;
+  let lastInputSentAt = 0;
+
   function sendInput(ptr) {
     if (!match || !match.live || !ws || ws.readyState !== WebSocket.OPEN) {
       return;
     }
+    const input = match.module.HEAPU8.subarray(ptr, ptr + PDNet.INPUT_SIZE);
+    const now = performance.now();
+    if (lastInput && now - lastInputSentAt < INPUT_HEARTBEAT_MS && lastInput.every((b, i) => b === input[i])) {
+      return;
+    }
+    lastInput = input.slice();
+    lastInputSentAt = now;
     const msg = new Uint8Array(1 + PDNet.INPUT_SIZE);
     msg[0] = MSG_INPUT;
-    msg.set(match.module.HEAPU8.subarray(ptr, ptr + PDNet.INPUT_SIZE), 1);
+    msg.set(input, 1);
     ws.send(msg);
   }
+
+  // ---------------------------------------------------------------------------
+  // serving a relay server (cloudlare_worker_server): it has no copy of the game, so the players'
+  // games provide snapshots for players joining, and report the result
+
+  let snapRanges = null;
+  async function loadSnapRanges() {
+    if (!snapRanges) {
+      const build = config && config.build;
+      const res = await fetch(build ? `pd.snap.json?v=${build}` : 'pd.snap.json');
+      snapRanges = (await res.json()).ranges;
+    }
+    return snapRanges;
+  }
+
+  async function deflate(bytes) {
+    const stream = new Blob([bytes]).stream().pipeThrough(new CompressionStream('deflate-raw'));
+    return new Uint8Array(await new Response(stream).arrayBuffer());
+  }
+
+  async function answerSnapshotRequest(reqId) {
+    if (!match || !match.module || !match.live || match.awaitingSnapshot) {
+      send({ type: 'snapshot-failed', reqId });
+      return;
+    }
+    const ranges = await loadSnapRanges();
+    // taken between ticks: the game is waiting for the next one while this handler runs
+    const snap = PDNet.makeSnapshot(match.module, ranges);
+    const packed = await deflate(snap.bytes);
+    const msg = new Uint8Array(9 + packed.length);
+    const view = new DataView(msg.buffer);
+    msg[0] = MSG_SNAPSHOT_REPLY;
+    view.setUint32(1, reqId >>> 0, true);
+    view.setUint32(5, snap.tick >>> 0, true);
+    msg.set(packed, 9);
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(msg);
+    }
+  }
+
+  // tells the server the match is over, with the scores, once
+  function checkMatchOver() {
+    if (!match || !match.module || !match.live || match.ended || match.overSent) {
+      return;
+    }
+    if (match.module._netGetMatchOver()) {
+      match.overSent = true;
+      const results = readScores().map((r) => ({
+        name: r.name, bot: r.bot, kills: r.kills, suicides: r.suicides, deaths: r.deaths,
+      }));
+      send({ type: 'over', tick: match.lastTick, results });
+    }
+  }
+  setInterval(checkMatchOver, 500);
 
   function updateHud() {
     if (!match || match.ended) {
