@@ -1,7 +1,7 @@
 # Perfect Dark port (008 Second Light)
 
-- Demo (Cloudflare Worker) : https://perfectdark.royal-cake-5abc.workers.dev
-- Demo 2 (my own server through cloudflare proxy) : https://perfectdark.m03.ca
+**Primary Public server: <https://perfectdark.royal-cake-5abc.workers.dev>**
+**Development Public server: <https://perfectdark.m03.ca>**
 
 This repository contains a work-in-progress port of the [Perfect Dark decompilation](https://github.com/n64decomp/perfect_dark) to modern platforms.
 
@@ -47,7 +47,8 @@ There are minor graphics- and gameplay-related issues, and possibly occasional c
 
 ## Play in your browser
 
-**Public server: <https://perfectdark.m03.ca>**
+**Primary Public server: <https://perfectdark.royal-cake-5abc.workers.dev>**
+**Development Public server: <https://perfectdark.m03.ca>**
 
 Open it in Chrome, Edge, Brave or Firefox on a computer, choose your Perfect Dark ROM (NTSC v1.1, `.z64`/`.v64`/`.n64`) and press **Start**. The ROM stays on your computer: it is read by the page, remembered in your browser for next time, and never uploaded. Your agents, unlocks and settings are saved in the browser too.
 
