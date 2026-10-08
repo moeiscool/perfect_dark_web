@@ -244,6 +244,17 @@ static bool fbActive = 0;
 static std::map<int, FBInfo>::iterator active_fb;
 static std::map<int, FBInfo> framebuffers;
 
+// The game stores framebuffer ids in its own memory (eg. menu blur), so it gets stable ids: 1, 2, 3...
+// in creation order, whatever framebuffers fast3d created for itself. 0 is the screen. This keeps the
+// ids identical on every machine in a netplay match, including the server, which has no renderer.
+static std::vector<int> game_fb_ids = { 0 };
+
+static inline int game_fb(int id) {
+    return (id > 0 && id < (int)game_fb_ids.size()) ? game_fb_ids[id] : 0;
+}
+
+static void gfx_resize_framebuffer_real(int fb, uint32_t width, uint32_t height, int upscale, int autoresize);
+
 static constexpr float clampf(const float x, const float min, const float max) {
     return (x < min) ? min : (x > max) ? max : x;
 }
@@ -1052,7 +1063,33 @@ static void gfx_adjust_width_height_for_scale(uint32_t& width, uint32_t& height)
     }
 }
 
+// Netplay: every machine runs all 4 players' render passes (the game's simulation happens inside
+// them), but each browser should only draw its own player. The game tags the start of each
+// player's part of the display list (G_NOOP with NET_GFX_VIEW_TAG); while in another player's part,
+// geometry and clears are skipped, so their views cost no vertex or GPU work. State changes are
+// still processed so the command stream stays consistent.
+#define NET_GFX_VIEW_MAGIC 0x4e560000u
+#define NET_GFX_VIEW_ALL 0xff
+static int net_local_view = -1; // -1: draw everything
+static bool net_skip_drawing = false;
+
+extern "C" void gfx_set_net_view(int playernum) {
+    net_local_view = playernum;
+}
+
+static void gfx_net_view_marker(uint32_t tag) {
+    const int view = tag & 0xff;
+    const bool skip = net_local_view >= 0 && view != NET_GFX_VIEW_ALL && view != net_local_view;
+    if (skip != net_skip_drawing) {
+        gfx_flush();
+        net_skip_drawing = skip;
+    }
+}
+
 static void gfx_sp_vertex(size_t n_vertices, size_t dest_index, const Vtx* vertices) {
+    if (net_skip_drawing) {
+        return;
+    }
     SUPPORT_CHECK(n_vertices <= MAX_VERTICES);
 
     for (size_t i = 0; i < n_vertices; i++, dest_index++) {
@@ -1213,6 +1250,9 @@ static inline int gfx_lod_tile_offset(const int i) {
 }
 
 static void gfx_sp_tri1(uint8_t vtx1_idx, uint8_t vtx2_idx, uint8_t vtx3_idx, bool is_rect) {
+    if (net_skip_drawing) {
+        return;
+    }
     struct LoadedVertex* v1 = &rsp.loaded_vertices[vtx1_idx];
     struct LoadedVertex* v2 = &rsp.loaded_vertices[vtx2_idx];
     struct LoadedVertex* v3 = &rsp.loaded_vertices[vtx3_idx];
@@ -1661,13 +1701,18 @@ static void gfx_sp_extra_geometry_mode(uint32_t clear, uint32_t set) {
 }
 
 static void gfx_adjust_viewport_or_scissor(XYWidthHeight* area, bool preserve_aspect = false) {
+    const float ax = area->x;
+    const float ay = area->y;
+    const float aw = area->width;
+    const float ah = area->height;
+
     // HACK: assume all target framebuffers have the same aspect
     // Use floor/ceil to ensure scissor fully contains the logical region
     // and prevents sub-pixel gaps at viewport edges
-    float x1 = area->x * RATIO_X;
-    float y1 = (SCREEN_HEIGHT - area->y) * RATIO_Y;
-    float x2 = (area->x + area->width) * RATIO_X;
-    float y2 = (SCREEN_HEIGHT - area->y + area->height) * RATIO_Y;
+    float x1 = ax * RATIO_X;
+    float y1 = (SCREEN_HEIGHT - ay) * RATIO_Y;
+    float x2 = (ax + aw) * RATIO_X;
+    float y2 = (SCREEN_HEIGHT - ay + ah) * RATIO_Y;
     
     area->x = std::floor(x1);
     area->y = std::floor(y1);
@@ -2006,6 +2051,9 @@ static void gfx_dp_set_subpixel_offset(int16_t x, int16_t y) {
 }
 
 static void gfx_draw_rectangle(int32_t ulx, int32_t uly, int32_t lrx, int32_t lry) {
+    if (net_skip_drawing) {
+        return;
+    }
     uint32_t saved_other_mode_h = rdp.other_mode_h;
     uint32_t cycle_type = (rdp.other_mode_h & (3U << G_MDSFT_CYCLETYPE));
 
@@ -2289,6 +2337,9 @@ static void gfx_run_dl(Gfx* cmd) {
         switch (opcode) {
                 // RSP commands:
             case G_NOOP:
+                if ((cmd->words.w1 & 0xffff0000u) == NET_GFX_VIEW_MAGIC) {
+                    gfx_net_view_marker(cmd->words.w1);
+                }
                 break;
             case G_MTX: {
                 gfx_sp_matrix(C0(16, 8), (const int32_t*)seg_addr(cmd->words.w1));
@@ -2356,7 +2407,7 @@ static void gfx_run_dl(Gfx* cmd) {
             }
             case G_SETTIMG_FB_EXT:
                 gfx_flush();
-                gfx_rapi->select_texture_fb(cmd->words.w1);
+                gfx_rapi->select_texture_fb(game_fb(cmd->words.w1));
                 rdp.textures_changed[0] = false;
                 rdp.textures_changed[1] = false;
                 break;
@@ -2497,7 +2548,8 @@ static void gfx_run_dl(Gfx* cmd) {
                 }
                 break;
             case G_COPYFB_EXT:
-                gfx_copy_framebuffer(C0(11, 11), C0(0, 11), (int16_t)C1(16, 16), (int16_t)C1(0, 16), C0(22, 1));
+                if (!net_skip_drawing)
+                    gfx_copy_framebuffer(C0(11, 11), C0(0, 11), (int16_t)C1(16, 16), (int16_t)C1(0, 16), C0(22, 1));
                 break;
             case G_RDPSETOTHERMODE:
                 gfx_dp_set_other_mode(C0(0, 24), cmd->words.w1);
@@ -2521,7 +2573,9 @@ static void gfx_run_dl(Gfx* cmd) {
                 break;
             case G_CLEAR_DEPTH_EXT:
                 gfx_flush();
-                gfx_rapi->clear_framebuffer(false, true);
+                if (!net_skip_drawing) {
+                    gfx_rapi->clear_framebuffer(false, true);
+                }
                 break;
             case G_RDPPIPESYNC:
             case G_RDPFULLSYNC:
@@ -2681,6 +2735,7 @@ extern "C" void gfx_run(Gfx* commands) {
     gfx_rapi->clear_framebuffer(true, false);
     rdp.viewport_or_scissor_changed = true;
     rendering_state.viewport = {};
+    net_skip_drawing = false;
     rendering_state.scissor = {};
     gfx_run_dl(commands);
     gfx_flush();
@@ -2743,11 +2798,17 @@ extern "C" void gfx_set_mipmap_filter(enum MipmapFilteringMode mode) {
 
 extern "C" int gfx_create_framebuffer(uint32_t width, uint32_t height, int upscale, int autoresize) {
     int fb = gfx_rapi->create_framebuffer();
-    gfx_resize_framebuffer(fb, width, height, upscale, autoresize);
-    return fb;
+    gfx_resize_framebuffer_real(fb, width, height, upscale, autoresize);
+    // the game gets its own id (see game_fb)
+    game_fb_ids.push_back(fb);
+    return (int)game_fb_ids.size() - 1;
 }
 
 extern "C" void gfx_resize_framebuffer(int fb, uint32_t width, uint32_t height, int upscale, int autoresize) {
+    gfx_resize_framebuffer_real(game_fb(fb), width, height, upscale, autoresize);
+}
+
+static void gfx_resize_framebuffer_real(int fb, uint32_t width, uint32_t height, int upscale, int autoresize) {
     uint32_t orig_width, orig_height;
 
     if (width && height) {
@@ -2771,12 +2832,15 @@ extern "C" void gfx_resize_framebuffer(int fb, uint32_t width, uint32_t height, 
 }
 
 extern "C" void gfx_set_framebuffer(int fb, float noise_scale) {
+    fb = game_fb(fb);
     gfx_rapi->start_draw_to_framebuffer(fb, noise_scale);
     gfx_rapi->clear_framebuffer(true, true);
     active_fb = framebuffers.find(fb);
 }
 
 extern "C" void gfx_copy_framebuffer(int fb_dst, int fb_src, int left, int top, int use_back) {
+    fb_dst = game_fb(fb_dst);
+    fb_src = game_fb(fb_src);
     const bool is_main_fb = (fb_src == 0);
 
     if (is_main_fb) {

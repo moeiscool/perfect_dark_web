@@ -98,6 +98,7 @@
 #include "types.h"
 #ifndef PLATFORM_N64
 #include "video.h"
+#include "net.h"
 #endif
 
 struct sndstate *g_MiscSfxAudioHandles[3];
@@ -1145,6 +1146,13 @@ Gfx *lvRender(Gfx *gdl)
 				islastplayer = playercount == nextplayernum;
 			}
 
+#ifndef PLATFORM_N64
+			if (netIsActive()) {
+				// tells the renderer whose view this is; each browser only draws its own player's
+				gDPNoOpTag(gdl++, NET_GFX_VIEW_TAG(g_Vars.currentplayernum));
+			}
+#endif
+
 			// Calculate bluramount - this will be used later
 			if (g_Vars.tickmode != TICKMODE_CUTSCENE) {
 				player = g_Vars.currentplayer;
@@ -1733,6 +1741,12 @@ Gfx *lvRender(Gfx *gdl)
 				gdl = savedgdl;
 			}
 		} // end of player loop
+
+#ifndef PLATFORM_N64
+		if (netIsActive()) {
+			gDPNoOpTag(gdl++, NET_GFX_VIEW_TAG(NET_GFX_VIEW_ALL));
+		}
+#endif
 	} // end of stage if-statements
 
 	if (g_Vars.autocutplaying && g_Vars.autocutfinished) {

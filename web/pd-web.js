@@ -243,6 +243,14 @@
     }
   });
   ui.canvas.addEventListener('contextmenu', (e) => e.preventDefault());
+  ui.canvas.addEventListener('webglcontextlost', () => {
+    // online matches recover by themselves (web/net-client.js)
+    if (module && !document.body.classList.contains('is-online')) {
+      syncSaves();
+      ui.errorText.textContent = 'The browser reset the game\x27s graphics (this can happen when the tab is in the background for a while). Your saves are kept; reload the page to continue.';
+      ui.error.hidden = false;
+    }
+  });
 
   // ---------------------------------------------------------------------------
   // Saves
@@ -473,9 +481,42 @@
     return args ? args.split(/\s+/).filter(Boolean) : [];
   }
 
-  async function startGame() {
+  // the game script is loaded on demand, versioned by the server's build id so a stale cached copy
+  // never runs against a newer server (online matches need the exact same build everywhere)
+  let gameScript = null;
+  function loadGameScript() {
+    if (!gameScript) {
+      gameScript = (async () => {
+        let build = '';
+        try {
+          build = (await (await fetch('server-config.json', { cache: 'no-store' })).json()).build || '';
+        } catch {
+          // plain static hosting
+        }
+        await new Promise((resolve, reject) => {
+          const s = document.createElement('script');
+          s.src = build ? `pd.js?v=${build}` : 'pd.js';
+          s.onload = resolve;
+          s.onerror = () => reject(new Error('could not load pd.js'));
+          document.head.appendChild(s);
+        });
+        return build;
+      })();
+    }
+    return gameScript;
+  }
+
+  /**
+   * Starts the game. opts (used by online matches, web/net-client.js):
+   *   extraArgs: more command line arguments
+   *   files: { path: text } written to the virtual filesystem before start
+   *   hooks: properties added to the Emscripten module (eg. onNetHash)
+   * Returns the module; throws on failure.
+   */
+  async function startGame(opts) {
+    opts = opts || {};
     if (!romBytes || module) {
-      return;
+      throw new Error(module ? 'the game is already running' : 'no ROM selected');
     }
 
     ui.start.disabled = true;
@@ -486,9 +527,13 @@
       navigator.storage.persist().catch(() => {});
     }
 
+    const build = await loadGameScript();
+
     const config = {
       canvas: ui.canvas,
-      arguments: ['--basedir', '/data', '--savedir', SAVE_DIR, ...extraArgs()],
+      arguments: ['--basedir', '/data', '--savedir', SAVE_DIR, ...extraArgs(), ...(opts.extraArgs || [])],
+      locateFile: (p) => (build ? `${p}?v=${build}` : p),
+      ...(opts.hooks || {}),
       print: (text) => console.log(text),
       printErr: (text) => console.warn(text),
       onFatalError: (text) => {
@@ -502,6 +547,14 @@
           FS.mkdir('/data');
           FS.writeFile(ROM_FS_PATH, romBytes);
           romBytes = null; // the copy in MEMFS is the one the game uses now
+
+          for (const [file, text] of Object.entries(opts.files || {})) {
+            const dir = file.slice(0, file.lastIndexOf('/'));
+            if (dir && !FS.analyzePath(dir).exists) {
+              FS.mkdirTree(dir);
+            }
+            FS.writeFile(file, text);
+          }
 
           FS.mkdir(SAVE_DIR);
           FS.mount(mod.IDBFS, {}, SAVE_DIR);
@@ -526,7 +579,7 @@
     } catch (e) {
       setStatus(`Failed to start: ${e.message || e}`, true);
       ui.start.disabled = false;
-      return;
+      throw e;
     }
 
     ui.overlay.hidden = true;
@@ -551,9 +604,21 @@
       }
     });
     window.addEventListener('pagehide', saveEverything);
+
+    return module;
   }
 
-  ui.start.addEventListener('click', startGame);
+  ui.start.addEventListener('click', () => startGame().catch(() => {}));
+
+  // for the online client (web/net-client.js)
+  window.PDWeb = {
+    romBytes: () => romBytes,
+    startGame,
+    showOverlay: () => {
+      ui.overlay.hidden = false;
+      document.body.classList.remove('is-running');
+    },
+  };
 
   // the Gamepad API is only available in secure contexts (https:// or localhost)
   if (!window.isSecureContext) {

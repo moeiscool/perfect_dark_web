@@ -25,6 +25,7 @@
 #include "audio.h"
 #include "input.h"
 #include "mixer.h"
+#include "net.h"
 
 /*
  * private typedefs and defines
@@ -288,10 +289,15 @@ void schedEndFrame(OSSched *sc)
 		viHandleRetrace();
 	}
 
-	inputUpdate();
+	if (!netIsHeadless()) {
+		inputUpdate();
+	}
 
-	joyStartReadData(&g_PiMesgQueue);
-	joyReadData();
+	// in netplay the joy sample is taken at the start of each tick from the network inputs (netBeginTick)
+	if (!netIsActive()) {
+		joyStartReadData(&g_PiMesgQueue);
+		joyReadData();
+	}
 	joy00014238();
 
 	sndHandleRetrace();

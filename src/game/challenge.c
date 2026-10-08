@@ -19,6 +19,9 @@
 #include "lib/rng.h"
 #include "data.h"
 #include "types.h"
+#ifndef PLATFORM_N64
+#include "net.h"
+#endif
 
 u8 g_MpFeaturesForceUnlocked[40];
 u8 g_MpFeaturesUnlocked[80];
@@ -862,6 +865,13 @@ void challengeConsiderMarkingComplete(void)
 
 bool challengeIsFeatureUnlocked(s32 featurenum)
 {
+#ifndef PLATFORM_N64
+	if (netIsActive()) {
+		// unlocks come from each player's saves; everything is available in online matches
+		return true;
+	}
+#endif
+
 	if (featurenum == 0) {
 		return true;
 	}
@@ -871,6 +881,12 @@ bool challengeIsFeatureUnlocked(s32 featurenum)
 
 bool challengeIsFeatureUnlockedByPlayer(u32 numplayers, s32 featurenum)
 {
+#ifndef PLATFORM_N64
+	if (netIsActive()) {
+		return true;
+	}
+#endif
+
 	if (featurenum == 0) {
 		return true;
 	}

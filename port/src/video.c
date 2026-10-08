@@ -8,6 +8,7 @@
 #include "config.h"
 #include "system.h"
 #include "video.h"
+#include "net.h"
 
 #include "../fast3d/gfx_api.h"
 #include "../fast3d/gfx_sdl.h"
@@ -15,6 +16,7 @@
 
 #ifdef PLATFORM_WEB
 #include <emscripten.h>
+#include <emscripten/html5.h>
 
 // The game runs one long blocking loop. Once per frame we suspend it (via ASYNCIFY) until the
 // browser's next animation frame, which lets the canvas present, input/gamepad events arrive,
@@ -40,6 +42,7 @@ static struct GfxWindowManagerAPI *wmAPI;
 static struct GfxRenderingAPI *renderingAPI;
 
 static bool initDone = false;
+static bool drawThisFrame = true;
 
 static s32 vidWidth = DEFAULT_VID_WIDTH;
 static s32 vidHeight = DEFAULT_VID_HEIGHT;
@@ -126,10 +129,32 @@ s32 videoInit(void)
 
 void videoStartFrame(void)
 {
-	if (initDone) {
-		startTime = wmAPI->get_time();
-		gfx_start_frame();
+	if (!initDone) {
+		return;
 	}
+
+	// netplay: when several ticks are queued, only the newest one is drawn
+	drawThisFrame = !netIsActive() || netShouldPresent();
+
+#ifdef PLATFORM_WEB
+	// the browser dropped the WebGL context (the page reloads when it's visible again); keep
+	// running the game, just don't draw
+	if (emscripten_is_webgl_context_lost(emscripten_webgl_get_current_context())) {
+		drawThisFrame = false;
+	}
+#endif
+
+	if (!drawThisFrame) {
+		// still pump window and input events
+		wmAPI->handle_events();
+		return;
+	}
+
+	startTime = wmAPI->get_time();
+	gfx_start_frame();
+
+	// netplay: draw only the local player's view (players are allocated in slot order)
+	gfx_set_net_view(netIsActive() ? netGetLocalSlot() : -1);
 
 	// Synchronize with their backend counterparts.
 	vidFullscreen = videoGetFullscreen();
@@ -138,7 +163,7 @@ void videoStartFrame(void)
 
 void videoSubmitCommands(Gfx *cmds)
 {
-	if (initDone) {
+	if (initDone && drawThisFrame) {
 		gfx_run(cmds);
 		++dlcount;
 	}
@@ -146,14 +171,17 @@ void videoSubmitCommands(Gfx *cmds)
 
 void videoEndFrame(void)
 {
-	if (!initDone) {
+	if (!initDone || !drawThisFrame) {
 		return;
 	}
 
 	gfx_end_frame();
 
 #ifdef PLATFORM_WEB
-	videoWebWaitForFrame();
+	// in netplay the game waits for the server's ticks instead (netWaitForTick)
+	if (!netIsActive()) {
+		videoWebWaitForFrame();
+	}
 #endif
 
 	++frames;
@@ -188,6 +216,9 @@ void videoClearScreen(void)
 
 void *videoGetWindowHandle(void)
 {
+	if (netIsHeadless()) {
+		return NULL;
+	}
 	if (initDone) {
 		return wmAPI->get_window_handle();
 	}
@@ -223,18 +254,27 @@ s32 videoGetHeight(void)
 
 s32 videoGetFullscreen(void)
 {
+	if (netIsHeadless()) {
+		return vidFullscreen;
+	}
 	vidFullscreen = wmAPI->get_fullscreen_state();
 	return vidFullscreen;
 }
 
 s32 videoGetFullscreenMode(void)
 {
+	if (netIsHeadless()) {
+		return vidFullscreenExclusive;
+	}
 	vidFullscreenExclusive = wmAPI->get_fullscreen_flag_mode();
 	return vidFullscreenExclusive;
 }
 
 s32 videoGetMaximizeWindow(void)
 {
+	if (netIsHeadless()) {
+		return vidMaximize;
+	}
 	vidMaximize = wmAPI->get_maximized_state();
 	return vidMaximize;
 }
@@ -269,12 +309,18 @@ s32 videoGetMSAA(void)
 
 s32 videoGetVsync(void)
 {
+	if (netIsHeadless()) {
+		return vidVsync;
+	}
 	vidVsync = wmAPI->get_swap_interval();
 	return vidVsync;
 }
 
 s32 videoGetFramerateLimit(void)
 {
+	if (netIsHeadless()) {
+		return vidFramerateLimit;
+	}
 	vidFramerateLimit = wmAPI->get_target_fps();
 	return vidFramerateLimit;
 }
@@ -298,7 +344,8 @@ static s32 videoInitDisplayModes(void)
 	}
 
 	const s32 numCustomModes = 1;
-	displaymode *modeList = sysMemZeroAlloc((numBaseModes + numCustomModes) * sizeof(displaymode));
+	// C heap, not the simulation arena: only the browser/desktop does this, the server doesn't
+	displaymode *modeList = calloc(1, (numBaseModes + numCustomModes) * sizeof(displaymode));
 	if (!modeList) {
 		return false;
 	}
@@ -322,7 +369,7 @@ static s32 videoInitDisplayModes(void)
 		}
 	}
 
-	modeList = sysMemRealloc(modeList, numModes * sizeof(displaymode));
+	modeList = realloc(modeList, numModes * sizeof(displaymode));
 	if (!modeList) {
 		return false;
 	}
@@ -349,6 +396,9 @@ s32 videoGetNumDisplayModes(void)
 
 void videoSetDisplayMode(const s32 index)
 {
+	if (netIsHeadless()) {
+		return;
+	}
 	const displaymode dm = vidModes[index];
 
 	if (index == 0) {
@@ -393,6 +443,9 @@ u32 videoGetAnisotropicFilter()
 
 u32 videoGetMaxAnisotropyLevel()
 {
+	if (netIsHeadless()) {
+		return 0;
+	}
 	return renderingAPI->get_max_anisotropy_level();
 }
 
@@ -403,6 +456,10 @@ s32 videoGetDetailTextures(void)
 
 f32 videoGetGlareBrightness(void)
 {
+	if (netIsActive() && vidGlareBrightness <= 0.f) {
+		// 0 disables broken light flicker, which uses random numbers; keep it on in netplay
+		return 1.f;
+	}
 	return vidGlareBrightness;
 }
 
@@ -419,6 +476,9 @@ void videoSetWindowOffset(s32 x, s32 y)
 
 void videoSetFullscreen(s32 fs)
 {
+	if (netIsHeadless()) {
+		return;
+	}
 	if (fs != vidFullscreen) {
 		vidFullscreen = !!fs;
 		wmAPI->set_closest_resolution(vidWidth, vidHeight, vidCenter);
@@ -432,6 +492,9 @@ void videoSetFullscreen(s32 fs)
 
 void videoSetFullscreenMode(s32 mode)
 {
+	if (netIsHeadless()) {
+		return;
+	}
 	vidFullscreenExclusive = mode;
 	wmAPI->set_fullscreen_flag(mode);
 	if (vidFullscreen) {
@@ -442,6 +505,9 @@ void videoSetFullscreenMode(s32 mode)
 
 void videoSetMaximizeWindow(s32 fs)
 {
+	if (netIsHeadless()) {
+		return;
+	}
 	if (fs != vidMaximize) {
 		vidMaximize = !!fs;
 		wmAPI->set_maximize(vidMaximize);
@@ -456,6 +522,9 @@ void videoSetMaximizeWindow(s32 fs)
 
 void videoSetCenterWindow(s32 center)
 {
+	if (netIsHeadless()) {
+		return;
+	}
 	vidCenter = center;
 	if (vidCenter && !vidMaximize) {
 		s32 posX = 0;
@@ -467,6 +536,9 @@ void videoSetCenterWindow(s32 center)
 
 void videoSetTextureFilter(u32 filter)
 {
+	if (netIsHeadless()) {
+		return;
+	}
 	if (filter > FILTER_THREE_POINT) filter = FILTER_THREE_POINT;
 	if (texFilter == filter) return;
 	texFilter = filter;
@@ -480,12 +552,18 @@ void videoSetTextureFilter2D(s32 filter)
 
 void videoSetAnisotropicFilter(u32 level)
 {
+	if (netIsHeadless()) {
+		return;
+	}
 	texAnisotropicFilter = level;
 	renderingAPI->set_anisotropy_level(level);
 }
 
 void videoSetDetailTextures(s32 detail)
 {
+	if (netIsHeadless()) {
+		return;
+	}
 	texDetail = !!detail;
 	gfx_detail_textures_enabled = (bool)texDetail;
 }
@@ -502,17 +580,28 @@ void videoSetOverexposureScale(f32 scale)
 
 s32 videoCreateFramebuffer(u32 w, u32 h, s32 upscale, s32 autoresize)
 {
+	if (netIsHeadless()) {
+		// same ids fast3d would hand out (see game_fb in gfx_pc.cpp)
+		static s32 headlessfbs = 0;
+		return ++headlessfbs;
+	}
 	return gfx_create_framebuffer(w, h, upscale, autoresize);
 }
 
 void videoSetMSAA(const s32 msaa)
 {
+	if (netIsHeadless()) {
+		return;
+	}
 	vidMSAA = msaa;
 	gfx_msaa_level = (u32)vidMSAA;
 }
 
 void videoSetVsync(const s32 vsync)
 {
+	if (netIsHeadless()) {
+		return;
+	}
 	vidVsync = wmAPI->set_swap_interval(vsync) ? vsync : 0;
 
 	if (vidVsync == 0 && vidFramerateLimit == 0) {
@@ -523,6 +612,9 @@ void videoSetVsync(const s32 vsync)
 
 void videoSetFramerateLimit(const s32 limit)
 {
+	if (netIsHeadless()) {
+		return;
+	}
 	vidFramerateLimit = (vidVsync == 0 && limit == 0) ? VIDEO_MAX_FPS : limit;
 	wmAPI->set_target_fps(vidFramerateLimit);
 }
@@ -534,42 +626,68 @@ void videoSetDisplayFPS(const s32 displayfps)
 
 void videoSetFramebuffer(s32 target)
 {
+	if (netIsHeadless()) {
+		return;
+	}
 	return gfx_set_framebuffer(target, 1.f);
 }
 
 void videoResetFramebuffer(void)
 {
+	if (netIsHeadless()) {
+		return;
+	}
 	return gfx_reset_framebuffer();
 }
 
 s32 videoFramebuffersSupported(void)
 {
+	if (netIsActive()) {
+		// the game picks some effects (and their random numbers) based on this, so it must be the
+		// same on every machine; fast3d just skips the effect if the GPU can't do it
+		return true;
+	}
 	return gfx_framebuffers_enabled;
 }
 
 void videoResizeFramebuffer(s32 target, u32 w, u32 h, s32 upscale, s32 autoresize)
 {
+	if (netIsHeadless()) {
+		return;
+	}
 	gfx_resize_framebuffer(target, w, h, upscale, autoresize);
 }
 
 void videoCopyFramebuffer(s32 dst, s32 src, s32 left, s32 top)
 {
+	if (netIsHeadless()) {
+		return;
+	}
 	// assume immediate copies always read the front buffer
 	gfx_copy_framebuffer(dst, src, left, top, false);
 }
 
 void videoResetTextureCache(void)
 {
+	if (netIsHeadless()) {
+		return;
+	}
 	gfx_texture_cache_clear();
 }
 
 void videoFreeCachedTexture(const void *texptr)
 {
+	if (netIsHeadless()) {
+		return;
+	}
 	gfx_texture_cache_delete(texptr);
 }
 
 void videoFreeCachedTextures(const void *start, const void *end)
 {
+	if (netIsHeadless()) {
+		return;
+	}
 	gfx_texture_cache_delete_range(start, end);
 }
 

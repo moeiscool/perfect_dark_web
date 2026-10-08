@@ -1,6 +1,8 @@
 #ifndef _IN_INPUT_H
 #define _IN_INPUT_H
 
+#include "net.h"
+
 #include <PR/ultratypes.h>
 #include <PR/os_cont.h>
 

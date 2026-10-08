@@ -33,6 +33,18 @@ const HTTPS_PORT = parseInt(arg('https-port', process.env.HTTPS_PORT || '8443'),
 const HOST = arg('host', process.env.HOST || '0.0.0.0');
 const USE_HTTPS = !process.argv.includes('--no-https');
 const CERT_DIR = path.join(__dirname, '.cert');
+const ROM_PATH = arg('rom', process.env.PD_ROM);
+const MAX_ROOMS = parseInt(arg('max-rooms', process.env.PD_MAX_ROOMS || '4'), 10);
+
+// Online multiplayer lobby (WebSocket /net). Needs the 'ws' package (npm install in web/) and,
+// to run matches, the ROM (--rom), which stays on the server and is never served.
+let lobby = null;
+try {
+  const { Lobby } = require('./net/lobby.js');
+  lobby = new Lobby({ buildDir: ROOT, romPath: ROM_PATH, maxRooms: MAX_ROOMS, log: (m) => console.log(`${new Date().toISOString()} ${m}`) });
+} catch (e) {
+  console.warn(`warning: multiplayer lobby disabled: ${e.message}`);
+}
 
 const MIME = {
   '.html': 'text/html; charset=utf-8',
@@ -103,7 +115,14 @@ function handler(req, res) {
   }
   if (urlPath === '/server-config.json') {
     // lets the page link to the HTTPS port when it was opened over plain HTTP
-    return send(res, 200, JSON.stringify({ httpsPort: tls ? HTTPS_PORT : null }), {
+    if (lobby) {
+      lobby.reloadBuild(); // the build may have been replaced since start-up
+    }
+    return send(res, 200, JSON.stringify({
+      httpsPort: tls ? HTTPS_PORT : null,
+      build: lobby ? lobby.buildId : null,
+      online: !!(lobby && lobby.enabled),
+    }), {
       'Content-Type': 'application/json; charset=utf-8',
       'Cache-Control': 'no-cache',
     });
@@ -213,6 +232,17 @@ if (!fs.existsSync(path.join(ROOT, 'pd.wasm'))) {
 
 console.log(`Perfect Dark web server serving ${ROOT}`);
 
+function attachLobby(server) {
+  server.on('upgrade', (req, socket, head) => {
+    if (lobby && new URL(req.url, 'http://localhost').pathname === '/net') {
+      lobby.handleUpgrade(req, socket, head);
+    } else {
+      socket.destroy();
+    }
+  });
+  return server;
+}
+
 function exitOnListenError(port) {
   return (e) => {
     console.error(`error: cannot listen on ${HOST}:${port}: ${e.code === 'EADDRINUSE' ? 'port already in use' : e.message}`);
@@ -220,7 +250,7 @@ function exitOnListenError(port) {
   };
 }
 
-http.createServer(handler).on('error', exitOnListenError(PORT)).listen(PORT, HOST, () => {
+attachLobby(http.createServer(handler)).on('error', exitOnListenError(PORT)).listen(PORT, HOST, () => {
   for (const a of listAddresses()) {
     console.log(`  http://${a}:${PORT}/`);
   }
@@ -228,7 +258,7 @@ http.createServer(handler).on('error', exitOnListenError(PORT)).listen(PORT, HOS
 
 const tls = USE_HTTPS ? loadTlsCredentials() : null;
 if (tls) {
-  https.createServer(tls, handler).on('error', exitOnListenError(HTTPS_PORT)).listen(HTTPS_PORT, HOST, () => {
+  attachLobby(https.createServer(tls, handler)).on('error', exitOnListenError(HTTPS_PORT)).listen(HTTPS_PORT, HOST, () => {
     for (const a of listAddresses()) {
       console.log(`  https://${a}:${HTTPS_PORT}/  (use this from other machines so gamepads work)`);
     }

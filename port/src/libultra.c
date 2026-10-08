@@ -12,6 +12,7 @@
 #include "video.h"
 #include "audio.h"
 #include "fs.h"
+#include "net.h"
 
 #ifdef PLATFORM_WEB
 #include <emscripten.h>
@@ -168,6 +169,11 @@ s32 osAiSetFrequency(u32 frequency)
 
 u32 osAiGetLength(void)
 {
+	if (netIsActive()) {
+		// the mixer decides how much audio to render from this; in netplay it must not
+		// depend on the real output queue, or the match would play out differently per machine
+		return 0;
+	}
 	return audioGetBytesBuffered();
 }
 
@@ -182,7 +188,7 @@ s32 osAiSetNextBuffer(void *bufPtr, u32 size)
 s32 osContInit(OSMesgQueue *mesgq, u8 *bitpattern, OSContStatus *data)
 {
 	if (bitpattern) {
-		*bitpattern = inputControllerMask();
+		*bitpattern = netIsActive() ? 0xf : inputControllerMask();
 	}
 	if (data) {
 		osContGetQuery(data);
@@ -198,6 +204,12 @@ s32 osContStartReadData(OSMesgQueue *mesgq)
 
 void osContGetReadData(OSContPad *pad)
 {
+	if (netIsActive()) {
+		// every pad comes from the current network tick
+		netReadPads(pad);
+		return;
+	}
+
 	// game always passes in an array of 4 OSContPads
 	for (s32 i = 0; i < MAXCONTROLLERS; ++i, ++pad) {
 		pad->button = 0;
@@ -222,7 +234,7 @@ void osContGetQuery(OSContStatus *status)
 {
 	// also always 4 status structs here
 	for (s32 i = 0; i < MAXCONTROLLERS; ++i, ++status) {
-		if (inputControllerConnected(i)) {
+		if (netIsActive() || inputControllerConnected(i)) {
 			status->errnum = 0;
 			status->type = CONT_ABSOLUTE;
 			status->status = CONT_CARD_ON;
@@ -265,7 +277,9 @@ s32 __osMotorAccess(OSPfs *pfs, s32 cmd)
 static inline void osEepromSetPath(void)
 {
 	const char *extPath = sysArgGetString("--eeprom-file");
-	if (extPath && extPath[0]) {
+	if (netIsActive()) {
+		strncpy(eepromPath, NET_EEPROM_PATH, FS_MAXPATH);
+	} else if (extPath && extPath[0]) {
 		if (extPath[0] == '$' || fsPathIsAbsolute(extPath) || fsPathIsCwdRelative(extPath)) {
 			strncpy(eepromPath, extPath, FS_MAXPATH);
 		} else {

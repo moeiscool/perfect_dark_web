@@ -54,5 +54,6 @@ void gfx_resize_framebuffer(int fb, uint32_t width, uint32_t height, int upscale
 void gfx_set_framebuffer(int fb, float noise_scale) ;
 void gfx_reset_framebuffer(void);
 void gfx_copy_framebuffer(int fb_dst, int fb_src, int left, int top, int use_back);
+void gfx_set_net_view(int playernum);
 
 #endif

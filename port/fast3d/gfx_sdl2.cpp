@@ -93,6 +93,15 @@ static void gfx_sdl_init(const struct GfxWindowInitSettings *set) {
     }
 #endif
 
+#ifdef PLATFORM_WEB
+    // SDL would otherwise yield to the browser (emscripten_sleep) inside SDL_GL_SwapWindow. The game
+    // already yields once per frame itself, and that call is reached through a function pointer,
+    // which the build doesn't instrument for pausing (ASYNCIFY_IGNORE_INDIRECT)
+#ifdef SDL_HINT_EMSCRIPTEN_ASYNCIFY
+    SDL_SetHint(SDL_HINT_EMSCRIPTEN_ASYNCIFY, "0");
+#endif
+#endif
+
     if (SDL_Init(SDL_INIT_VIDEO) != 0) {
         sysFatalError("Could not init SDL:\n%s", SDL_GetError());
     }

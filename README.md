@@ -206,6 +206,27 @@ A gamepad shows up after any of its buttons is pressed. It controls player 1 alo
 
 Saves (the Game Pak, `eeprom.bin`) and settings (`pd.ini`) are kept in the browser's IndexedDB for that address. They are written as soon as the game saves, and the page asks the browser not to evict them. Use **Back up saves** (on the start screen, or the button in the top right corner while playing) to download them as a `.json` file, and **Restore from backup…** on the start screen to load them into another browser or after clearing site data. The `http://` and `https://` addresses count as different sites and keep separate saves. To trace the save system in the browser console, add `?args=--debug-pak` to the page address.
 
+#### Online multiplayer (Combat Simulator)
+
+The web server also hosts online matches: the **Online** section of the start page lists running matches and has a **Create match** form (arena, scenario, time and kill limits, weapons, 0-8 bots, teams, optional password). Each match has 4 player slots plus its bots. Players can join a match at any time, leave, and come back to the same slot (and score) within a minute; reloading the page rejoins automatically. Every browser shows only its own player's view.
+
+To enable it, install the server's one dependency and give it the ROM (it stays on the server and is never served):
+
+```
+cd web && npm install
+node server.js --rom /path/to/pd.ntsc-final.z64 [--max-rooms 4]
+```
+
+How it works:
+
+* **Lockstep.** Every machine in a match (the players' browsers and the server) runs the same simulation from the same seed and the same inputs. The server runs the authoritative copy headless (`web/net/headless.js`) and owns the clock: 60 times a second it combines each player's latest input into a tick and sends it to everyone. A player's own input therefore takes effect after one round trip to the server.
+* **Determinism.** In a match the game uses a fixed timestep, a seeded RNG, a fresh Game Pak, and the same settings for every player (full-screen 16:9 view, FOV, etc.), regardless of the local `pd.ini` (`port/src/net.c`).
+* **Joining mid-match** uses a snapshot of the server's game state (about 1 MB compressed) instead of a replay. All game memory lives in a fixed-address arena (`port/src/simarena.c`) and the build records where the game's globals are (`pd.snap.json`), so a snapshot can be restored in any instance of the same build.
+* **Each browser draws only its own player.** The other players' render passes still run, because they contain game logic, but fast3d skips their geometry (`gfx_set_net_view`).
+* **Desync detection.** Clients report a state hash every second, and the server resynchronizes anyone who differs.
+
+Testing tools: `node web/net/selftest.js <rom>` checks determinism and snapshots without a browser, and `node web/net/testplayer.js <server url> <rom> [--create]` joins a server as a headless player with scripted inputs.
+
 ### Notes
 
 Alternate compilers or toolchains can be specified by passing `-DCMAKE_TOOLCHAIN_FILE=whatever` as normal. The port does not build with Visual Studio.

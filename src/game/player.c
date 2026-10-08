@@ -2897,6 +2897,13 @@ s16 playerGetViewportWidth(void)
 {
 	s16 width;
 
+#ifndef PLATFORM_N64
+	if (netIsActive()) {
+		// online: every player has a full-screen view (each browser only draws its own player's)
+		return g_ViModes[g_ViRes].width;
+	}
+#endif
+
 #if VERSION >= VERSION_NTSC_1_0
 	if (!playerHasSharedViewport())
 #else
@@ -2936,6 +2943,12 @@ s16 playerGetViewportWidth(void)
 
 s16 playerGetViewportLeft(void)
 {
+#ifndef PLATFORM_N64
+	if (netIsActive()) {
+		return g_ViModes[g_ViRes].fbwidth - g_ViModes[g_ViRes].width;
+	}
+#endif
+
 #if VERSION >= VERSION_NTSC_1_0
 	s32 something = !playerHasSharedViewport();
 #else
@@ -2975,6 +2988,12 @@ s16 playerGetViewportLeft(void)
 s16 playerGetViewportHeight(void)
 {
 	s16 height;
+
+#ifndef PLATFORM_N64
+	if (netIsActive()) {
+		return g_ViModes[g_ViRes].fullheight;
+	}
+#endif
 
 	if (PLAYERCOUNT() >= 2
 #if VERSION >= VERSION_NTSC_1_0
@@ -3026,6 +3045,12 @@ s16 playerGetViewportHeight(void)
 s16 playerGetViewportTop(void)
 {
 	s16 top;
+
+#ifndef PLATFORM_N64
+	if (netIsActive()) {
+		return g_ViModes[g_ViRes].fulltop;
+	}
+#endif
 
 	if (PLAYERCOUNT() >= 2
 #if VERSION >= VERSION_NTSC_1_0
@@ -3105,6 +3130,11 @@ f32 player0f0bd358(void)
 #ifdef PLATFORM_N64
 	return result;
 #else
+	if (netIsActive()) {
+		// the window shape differs per player, but the simulation reads this; every online player
+		// gets the same widescreen view (the page letterboxes the canvas to match)
+		return g_ViModes[g_ViRes].yscale * NET_VIEW_ASPECT;
+	}
 	return result * (videoGetAspect() / ((f32)SCREEN_WIDTH_LO / (f32)SCREEN_HEIGHT_LO));
 #endif
 }
@@ -3664,7 +3694,7 @@ void playerTick(bool arg0)
 					sp178 = -sp178;
 				}
 				// mouse control
-				if (g_Vars.currentplayernum == 0) {
+				if (g_Vars.currentplayernum == 0 || netIsActive()) {
 					f32 mdx, mdy;
 					inputMouseGetScaledDelta(&mdx, &mdy);
 					if (mdx || mdy) {
@@ -4973,7 +5003,11 @@ void playerDieByShooter(u32 shooter, bool force)
 
 		hudmsgsRemoveForDeadPlayer(g_Vars.currentplayernum);
 
-		if (g_Vars.mplayerisrunning) {
+		if (g_Vars.mplayerisrunning
+#ifndef PLATFORM_N64
+				&& !netIsParkingPlayer() // a player leaving an online match isn't a death
+#endif
+				) {
 			mpstatsRecordDeath(shooter, g_Vars.currentplayernum);
 		}
 

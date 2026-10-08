@@ -17,6 +17,7 @@
 #ifndef PLATFORM_N64
 #include "video.h"
 #include "platform.h"
+#include "net.h"
 #endif
 
 #define TO_U16_A(x) ((u16)(x))
@@ -682,6 +683,9 @@ Gfx *viRenderViewportEdges(Gfx *gdl)
 
 #if VERSION >= VERSION_NTSC_1_0
 	if (PLAYERCOUNT() == 1
+#ifndef PLATFORM_N64
+			|| netIsActive() // online, every player's view is full screen
+#endif
 			|| ((g_Vars.coopplayernum >= 0 || g_Vars.antiplayernum >= 0)
 				&& playerHasSharedViewport() && g_Vars.currentplayernum == 0))
 #else

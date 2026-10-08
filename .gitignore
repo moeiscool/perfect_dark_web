@@ -28,3 +28,4 @@ CppProperties.json
 cmake-build-debug
 build-web
 web/.cert
+web/node_modules

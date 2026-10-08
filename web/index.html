@@ -188,6 +188,126 @@
     #error[hidden] { display: none; }
     #error .panel { border-color: var(--error); }
     #error-text { white-space: pre-wrap; font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 13px; }
+    /* online multiplayer */
+    #online { margin-top: 20px; border-top: 1px solid var(--panel-border); padding-top: 16px; }
+    #online[hidden] { display: none; }
+    #online h2 { margin: 0 0 8px; font-size: 18px; letter-spacing: 0.06em; text-transform: uppercase; }
+    .field { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
+    .field input, .field select {
+      font: inherit; color: var(--text); background: var(--key-bg);
+      border: 1px solid var(--panel-border); border-radius: 6px; padding: 7px 9px;
+    }
+    .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: end; }
+    .row > .field { flex: 1 1 140px; }
+    #online-rooms { display: grid; gap: 8px; margin: 12px 0; }
+    .room {
+      display: flex; gap: 14px; align-items: center; justify-content: space-between;
+      background: var(--key-bg); border: 1px solid var(--panel-border); border-left: 4px solid var(--ok);
+      border-radius: 8px; padding: 12px 14px;
+    }
+    .room-closed { border-left-color: var(--panel-border); opacity: 0.7; }
+    .room-info { display: grid; gap: 4px; min-width: 0; }
+    .room-head { display: flex; gap: 8px; align-items: center; min-width: 0; }
+    .room-head strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 16px; }
+    .room-lock { margin-left: 6px; font-size: 13px; }
+    .room-pill { flex: none; font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; padding: 2px 8px; border-radius: 999px; }
+    .pill-open { background: rgba(79, 180, 119, 0.18); color: var(--ok); }
+    .pill-full { background: rgba(240, 180, 90, 0.18); color: #f0b45a; }
+    .pill-ended { background: rgba(139, 149, 163, 0.18); color: var(--muted); }
+    .room-sub { font-size: 13px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .room-slots { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+    .pips { display: inline-flex; gap: 4px; }
+    .pip { width: 14px; height: 14px; border-radius: 3px; border: 2px solid var(--ok); }
+    .pip-taken { background: var(--muted); border-color: var(--muted); }
+    .room-closed .pip { border-color: var(--muted); }
+    .free { font-weight: 700; font-size: 14px; }
+    .free-yes { color: var(--ok); }
+    .free-no { color: var(--muted); }
+    .held { color: var(--muted); font-size: 12px; }
+    .room-players { font-size: 12px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .room .join { flex: none; min-width: 86px; }
+    button.primary { background: var(--accent); border-color: var(--accent); font-weight: 700; }
+    button.primary:hover:not(:disabled) { background: var(--accent-hover); border-color: var(--accent-hover); }
+    #online-create { display: grid; gap: 10px; margin-top: 10px; padding: 12px; border: 1px solid var(--panel-border); border-radius: 8px; }
+    #online-create[hidden] { display: none; }
+    .check { display: flex; gap: 8px; align-items: center; font-size: 13px; color: var(--muted); }
+    #online-rejoin { width: 100%; margin-top: 10px; border-color: var(--ok); }
+    #online-rejoin[hidden] { display: none; }
+
+    /* in a match: the view is 16:9 (the same for every player), letterboxed in the window */
+    body.is-online #canvas {
+      inset: auto;
+      left: 50%;
+      top: 50%;
+      width: min(100vw, calc(100vh * 16 / 9));
+      height: min(100vh, calc(100vw * 9 / 16));
+      transform: translate(-50%, -50%);
+    }
+    #net-hud {
+      position: fixed; left: 10px; top: 10px; z-index: 5; display: flex; gap: 8px; align-items: center;
+      font-size: 13px; color: var(--muted); background: rgba(0, 0, 0, 0.45); padding: 4px 6px 4px 10px; border-radius: 8px;
+    }
+    #net-hud[hidden] { display: none; }
+    #net-hud button { padding: 4px 10px; font-size: 13px; }
+    #net-hint {
+      position: fixed; left: 50%; bottom: 14%; transform: translateX(-50%); z-index: 5;
+      background: rgba(0, 0, 0, 0.6); padding: 8px 14px; border-radius: 8px; font-size: 15px;
+    }
+    #net-hint[hidden] { display: none; }
+    #net-results { position: fixed; inset: 0; display: grid; place-items: center; padding: 16px; background: rgba(0, 0, 0, 0.75); z-index: 15; }
+    #net-results[hidden] { display: none; }
+    #net-results table { width: 100%; border-collapse: collapse; margin: 12px 0; font-size: 14px; }
+    #net-results th, #net-results td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--panel-border); }
+    #net-results th { color: var(--muted); font-weight: 600; }
+
+    /* in-match notices ("Alpha has joined") */
+    #net-feed {
+      position: fixed; left: 50%; top: 56px; transform: translateX(-50%); z-index: 6;
+      display: grid; gap: 6px; justify-items: center; pointer-events: none;
+    }
+    .net-notice {
+      background: rgba(0, 0, 0, 0.6); border-left: 3px solid var(--accent); padding: 6px 14px;
+      font-size: 15px; font-weight: 600; letter-spacing: 0.02em; border-radius: 4px;
+      animation: notice-life 5s ease forwards;
+    }
+    @keyframes notice-life {
+      0% { opacity: 0; transform: translateY(-6px); }
+      8%, 80% { opacity: 1; transform: none; }
+      100% { opacity: 0; }
+    }
+
+    /* scoreboard (hold Select / touchpad) */
+    #net-scoreboard {
+      position: fixed; inset: 0; z-index: 7; display: grid; place-items: center; padding: 16px;
+      pointer-events: none;
+    }
+    #net-scoreboard[hidden] { display: none; }
+    .sb-panel {
+      width: min(720px, 100%); background: rgba(8, 10, 14, 0.82); border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 6px; overflow: hidden; box-shadow: 0 16px 50px rgba(0, 0, 0, 0.6);
+      backdrop-filter: blur(3px);
+    }
+    .sb-head {
+      display: flex; justify-content: space-between; align-items: baseline; gap: 12px;
+      padding: 12px 16px; background: linear-gradient(90deg, rgba(216, 64, 47, 0.85), rgba(216, 64, 47, 0.25));
+      text-transform: uppercase; letter-spacing: 0.08em;
+    }
+    #sb-title { font-weight: 700; font-size: 16px; }
+    #sb-time { font-variant-numeric: tabular-nums; font-size: 14px; opacity: 0.9; }
+    .sb-panel table { width: 100%; border-collapse: collapse; font-size: 15px; font-variant-numeric: tabular-nums; }
+    .sb-panel th {
+      text-align: right; padding: 8px 16px; font-size: 12px; font-weight: 600; letter-spacing: 0.08em;
+      text-transform: uppercase; color: var(--muted); border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    }
+    .sb-panel td { text-align: right; padding: 8px 16px; }
+    .sb-panel th:nth-child(-n+2), .sb-panel td:nth-child(-n+2) { text-align: left; }
+    .sb-panel td:first-child { width: 2.5em; color: var(--muted); }
+    .sb-panel tbody tr:nth-child(even) { background: rgba(255, 255, 255, 0.03); }
+    .sb-panel tr.sb-me { background: rgba(216, 64, 47, 0.28) !important; font-weight: 700; }
+    .sb-panel tr.sb-gone { opacity: 0.45; }
+    .sb-tag { color: var(--muted); font-size: 12px; font-weight: 400; margin-left: 6px; }
+    .sb-hint { padding: 8px 16px; font-size: 12px; color: var(--muted); text-align: right; }
+
   </style>
 </head>
 <body>
@@ -220,6 +340,49 @@
         Gamepads only work over HTTPS. Open <a id="secure-link" href="#"></a> instead
         (accept the certificate warning once).
       </p>
+
+      <section id="online" hidden>
+        <h2>Online</h2>
+        <p id="online-status" class="note" role="status"></p>
+        <div class="row">
+          <label class="field">Your name
+            <input id="online-name" maxlength="12" placeholder="Agent" autocomplete="nickname">
+          </label>
+          <button id="online-create-toggle" type="button">Create match…</button>
+        </div>
+        <button id="online-rejoin" type="button" hidden><span id="online-rejoin-text"></span> Rejoin it</button>
+
+        <form id="online-create" hidden>
+          <label class="field">Match name <input name="roomname" maxlength="32" placeholder="Combat Simulator"></label>
+          <div class="row">
+            <label class="field">Arena <select name="stage"></select></label>
+            <label class="field">Scenario <select name="scenario"></select></label>
+          </div>
+          <div class="row">
+            <label class="field">Time limit (min) <input name="timelimit" type="number" min="1" max="20" value="10"></label>
+            <label class="field">Kill limit (0 = none) <input name="scorelimit" type="number" min="0" max="100" value="0"></label>
+          </div>
+          <div class="row">
+            <label class="field">Weapons <select name="weaponset"></select></label>
+            <label class="field">Bots <input name="bots" type="number" min="0" max="8" value="2"></label>
+            <label class="field">Bot skill
+              <select name="botDifficulty">
+                <option value="0">Meat</option><option value="1">Easy</option><option value="2" selected>Normal</option>
+                <option value="3">Hard</option><option value="4">Perfect</option><option value="5">Dark</option>
+              </select>
+            </label>
+          </div>
+          <div class="row">
+            <label class="check"><input name="teams" type="checkbox"> Teams</label>
+            <label class="field">Password (optional) <input name="password" maxlength="32" autocomplete="off"></label>
+          </div>
+          <button type="submit" class="primary">Create and join</button>
+        </form>
+
+        <div id="online-rooms"></div>
+        <p id="online-empty" class="note">No matches running. Create one!</p>
+        <p class="note">Up to 4 players per match, plus bots. You can leave and rejoin within a minute and keep your score.</p>
+      </section>
 
       <details>
         <summary>Saves</summary>
@@ -255,6 +418,34 @@
     </div>
   </div>
 
+  <div id="net-hud" hidden>
+    <span id="net-hud-text"></span>
+    <button id="net-leave" type="button">Leave</button>
+  </div>
+  <div id="net-hint" hidden>Press fire to spawn</div>
+
+  <div id="net-feed" aria-live="polite"></div>
+  <div id="net-scoreboard" hidden>
+    <div class="sb-panel">
+      <div class="sb-head"><span id="sb-title"></span><span id="sb-time"></span></div>
+      <table>
+        <thead><tr><th>#</th><th>Player</th><th>Kills</th><th>Deaths</th><th>Suicides</th><th>K/D</th></tr></thead>
+        <tbody id="sb-body"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <div id="net-results" hidden>
+    <div class="panel">
+      <h1>Match <span>over</span></h1>
+      <table>
+        <thead><tr><th>#</th><th>Player</th><th>Kills</th><th>Deaths</th><th>Suicides</th></tr></thead>
+        <tbody id="net-results-body"></tbody>
+      </table>
+      <div class="actions"><button id="net-results-back" type="button">Back to the lobby</button></div>
+    </div>
+  </div>
+
   <div id="toast" role="status" aria-live="polite"></div>
 
   <div id="error" hidden>
@@ -265,7 +456,10 @@
     </div>
   </div>
 
-  <script src="pd.js"></script>
+  <!-- pd.js is loaded by pd-web.js, versioned with the server's build id -->
+  <script src="nethost.js"></script>
   <script src="pd-web.js"></script>
+  <script src="net-client.js"></script>
+  <script>window.PDOnline.init();</script>
 </body>
 </html>

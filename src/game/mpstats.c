@@ -16,6 +16,9 @@
 #include "bss.h"
 #include "data.h"
 #include "types.h"
+#ifndef PLATFORM_N64
+#include "net.h"
+#endif
 
 u32 var80070590 = 0x00000000;
 
@@ -233,6 +236,13 @@ void mpstatsRecordDeath(s32 aplayernum, s32 vplayernum)
 	struct mpchrconfig *ampchr = NULL;
 	s32 prevplayernum;
 	char text[256];
+
+#ifndef PLATFORM_N64
+	// online: a player leaving (or a slot nobody has joined) is parked as dead; that isn't a death
+	if (netIsActive() && (netIsParkingPlayer() || (vplayernum >= 0 && vplayernum < MAX_PLAYERS && netSlotIsVacant(vplayernum)))) {
+		return;
+	}
+#endif
 
 	if (g_Vars.normmplayerisrunning && g_MpSetup.scenario == MPSCENARIO_POPACAP) {
 		pacHandleDeath(aplayernum, vplayernum);

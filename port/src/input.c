@@ -11,6 +11,7 @@
 #include "utils.h"
 #include "system.h"
 #include "fs.h"
+#include "net.h"
 
 #if !SDL_VERSION_ATLEAST(2, 0, 14)
 // this was added in 2.0.14
@@ -1279,6 +1280,11 @@ const u32 *inputKeyGetBinds(s32 idx, u32 ck)
 
 s32 inputKeyPressed(u32 vk)
 {
+	if (netIsSimulating()) {
+		// game code polling keys directly; in netplay only the networked input counts
+		return 0;
+	}
+
 	if (vk >= VK_KEYBOARD_BEGIN && vk < VK_MOUSE_BEGIN) {
 		const u8 *state = SDL_GetKeyboardState(NULL);
 		return state[vk - VK_KEYBOARD_BEGIN];
@@ -1308,6 +1314,10 @@ s32 inputKeyPressed(u32 vk)
 
 s32 inputKeyJustPressed(u32 vk)
 {
+	if (netIsSimulating()) {
+		return (vk == VK_ESCAPE) ? netConsumeEsc() : 0;
+	}
+
 	const s8 pressed = inputKeyPressed(vk);
 	const s32 result = pressed && !vkPrevState[vk];
 	vkPrevState[vk] = pressed;
@@ -1346,6 +1356,9 @@ void inputLockMouse(s32 lock)
 
 s32 inputMouseIsLocked(void)
 {
+	if (netIsSimulating()) {
+		return 0;
+	}
 	return mouseLocked;
 }
 
@@ -1364,6 +1377,13 @@ void inputMouseGetRawDelta(s32 *dx, s32 *dy)
 
 void inputMouseGetScaledDelta(f32* dx, f32* dy)
 {
+	if (netIsSimulating()) {
+		const struct netinput *in = netGetCurrentInput();
+		if (dx) *dx = in->mousedx;
+		if (dy) *dy = in->mousedy;
+		return;
+	}
+
 	f32 mdx = 0.f, mdy = 0.f;
 	if (mouseLocked || inputMouseIsFreeAim()) {
 		mdx = mouseDX * (0.022f / 3.5f) * mouseSensX;
@@ -1375,11 +1395,22 @@ void inputMouseGetScaledDelta(f32* dx, f32* dy)
 
 s32 inputMouseIsFreeAim(void)
 {
+	if (netIsSimulating()) {
+		return (netGetCurrentInput()->flags & NETINPUT_FLAG_FREEAIM) != 0;
+	}
+
 	return mouseFreeAim && mouseEnabled && mouseFreeAimActive && !textInput;
 }
 
 void inputMouseGetFreeAimPos(f32 *x, f32 *y)
 {
+	if (netIsSimulating()) {
+		const struct netinput *in = netGetCurrentInput();
+		if (x) *x = in->aimx;
+		if (y) *y = in->aimy;
+		return;
+	}
+
 	f32 fx = 0.f, fy = 0.f;
 
 	if (inputMouseIsFreeAim() && mouseAnchorValid) {
@@ -1400,6 +1431,13 @@ void inputMouseGetFreeAimPos(f32 *x, f32 *y)
 
 void inputMouseGetAbsScaledDelta(f32* dx, f32* dy)
 {
+	if (netIsSimulating()) {
+		const struct netinput *in = netGetCurrentInput();
+		if (dx) *dx = fabsf(in->mousedx);
+		if (dy) *dy = fabsf(in->mousedy);
+		return;
+	}
+
 	f32 mdx = 0.f, mdy = 0.f;
 	if (mouseLocked) {
 		mdx = mouseDX * (0.022f / 3.5f) * fabsf(mouseSensX);
@@ -1423,6 +1461,10 @@ void inputMouseSetSpeed(f32 x, f32 y)
 
 s32 inputMouseIsEnabled(void)
 {
+	if (netIsSimulating()) {
+		// no menu mouse in netplay; menus are driven by the networked buttons
+		return 0;
+	}
 	return mouseEnabled;
 }
 
@@ -1436,6 +1478,12 @@ void inputMouseEnable(s32 enabled)
 
 s32 inputAutoLockMouse(s32 wantlock)
 {
+	if (netIsSimulating()) {
+		// the menu that opened or closed may belong to any player; the local free-aim state
+		// follows the local player's menus instead (netEndTick)
+		return 1;
+	}
+
 	if (mouseEnabled && mouseFreeAim) {
 		// "lock" means gameplay has the mouse: re-anchor so the crosshair starts centered, hide the cursor;
 		// "unlock" means a menu has it: show the cursor so it can be used to click menu items

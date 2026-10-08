@@ -73,6 +73,7 @@
 #include "data.h"
 #include "types.h"
 #include "system.h"
+#include "net.h"
 
 extern u8 *g_MempHeap;
 extern u32 g_MempHeapSize;
@@ -322,6 +323,9 @@ void mainLoop(void)
 	var8005d9c4 = 0;
 	argGetLevel(&g_StageNum);
 
+	// netplay: boot straight into the configured match (this also seeds the RNG)
+	netConfigureMatch();
+
 	if (g_DoBootPakMenu) {
 		g_Vars.pakstocheck = 0xfd;
 		g_StageNum = STAGE_BOOTPAKMENU;
@@ -343,7 +347,9 @@ void mainLoop(void)
 		g_StageNum = STAGE_4MBMENU;
 	}
 
-	rngSetSeed(osGetCount());
+	if (!netIsActive()) {
+		rngSetSeed(osGetCount());
+	}
 
 	// Outer loop - this is infinite because ending is never changed
 	while (!ending) {
@@ -501,6 +507,15 @@ void mainLoop(void)
 		profileReset();
 
 		while (g_MainChangeToStageNum < 0) {
+			if (netIsActive()) {
+				// the server decides when a tick happens
+				netWaitForTick();
+				schedStartFrame(&g_Sched);
+				mainTick();
+				schedEndFrame(&g_Sched);
+				continue;
+			}
+
 			const s32 cycles = osGetCount() - g_Vars.thisframestartt;
 			if (!g_Vars.mininc60 || (cycles >= g_Vars.mininc60 * CYCLES_PER_FRAME - CYCLES_PER_FRAME / 2)) {
 				schedStartFrame(&g_Sched);
@@ -541,6 +556,9 @@ void mainTick(void)
 		frametimeCalculate();
 		profileReset();
 		profileSetMarker(PROFILE_MAINTICK_START);
+		if (netIsActive()) {
+			netBeginTick();
+		}
 		joyDebugJoy();
 		schedSetCrashEnable2(false);
 
@@ -586,6 +604,10 @@ void mainTick(void)
 		rdpCreateTask(gdlstart, gdl, 0, (uintptr_t) &msg);
 		memaPrint();
 		profileSetMarker(PROFILE_MAINTICK_END);
+
+		if (netIsActive()) {
+			netEndTick();
+		}
 	}
 }
 

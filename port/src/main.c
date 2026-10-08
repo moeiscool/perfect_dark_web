@@ -18,6 +18,7 @@
 #include "system.h"
 #include "utils.h"
 #include "platform.h"
+#include "net.h"
 
 u32 g_OsMemSize = 0;
 s32 g_OsMemSizeMb = 16;
@@ -116,10 +117,20 @@ int main(int argc, const char **argv)
 
 	sysInit();
 	fsInit();
+	netInit();
 	configInit();
-	videoInit();
-	inputInit();
-	audioInit();
+
+	if (netIsActive()) {
+		// settings the simulation reads must be identical on every machine in a match
+		netApplyCanonicalSettings();
+	}
+
+	if (!netIsHeadless()) {
+		videoInit();
+		inputInit();
+		audioInit();
+	}
+
 	romdataInit();
 
 	g_ValidGbcRomFound = romdataCheckGbcRom();

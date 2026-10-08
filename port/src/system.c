@@ -13,6 +13,8 @@
 #include <PR/ultratypes.h>
 #include "platform.h"
 #include "system.h"
+#include "simarena.h"
+#include "net.h"
 
 #ifdef PLATFORM_WIN32
 
@@ -290,24 +292,43 @@ void sysGetHomePath(char *outPath, const u32 outLen)
 	SDL_free(sdlPath);
 }
 
+// Everything the game allocates goes into the simulation arena (port/src/simarena.c), so it's at the
+// same address on every machine in a netplay match. Outside of netplay, very large requests that
+// don't fit (eg. a huge Game.MemorySize) fall back to the C heap.
+
 void *sysMemAlloc(const u32 size)
 {
-	return malloc(size);
+	void *ptr = simAlloc(size);
+	if (!ptr && !netIsActive()) {
+		ptr = malloc(size);
+	}
+	return ptr;
 }
 
 void *sysMemZeroAlloc(const u32 size)
 {
-	return calloc(1, size);
+	void *ptr = simZeroAlloc(size);
+	if (!ptr && !netIsActive()) {
+		ptr = calloc(1, size);
+	}
+	return ptr;
 }
 
 void *sysMemRealloc(void *ptr, const u32 newSize)
 {
-	return realloc(ptr, newSize);
+	if (ptr && !simOwns(ptr)) {
+		return realloc(ptr, newSize);
+	}
+	return simRealloc(ptr, newSize);
 }
 
 void sysMemFree(void *ptr)
 {
-	free(ptr);
+	if (simOwns(ptr)) {
+		simFree(ptr);
+	} else {
+		free(ptr);
+	}
 }
 
 void sysSleep(const s64 hns)

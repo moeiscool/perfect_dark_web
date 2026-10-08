@@ -230,7 +230,7 @@ static inline void romdataLoadRom(void)
 
 	u8 scratch[5 * 1024];
 	if (rzipInflate(zipped, dataSeg, scratch) < 0) {
-		free(dataSeg);
+		sysMemFree(dataSeg);
 		sysFatalError("Could not inflate data segment.");
 	}
 

@@ -20,6 +20,20 @@
 #include "gfx_rendering_api.h"
 #include "gfx_pc.h"
 
+#ifdef __EMSCRIPTEN__
+#include <emscripten/html5.h>
+#endif
+
+// the browser can drop the WebGL context (eg. in a background tab); every GL call fails until the
+// page recreates it, which isn't a reason to stop the game (online matches keep simulating)
+static bool gl_context_lost(void) {
+#ifdef __EMSCRIPTEN__
+    return emscripten_is_webgl_context_lost(emscripten_webgl_get_current_context());
+#else
+    return false;
+#endif
+}
+
 using namespace std;
 
 struct ShaderProgram {
@@ -557,8 +571,12 @@ static struct ShaderProgram* gfx_opengl_create_and_load_new_shader(uint64_t shad
         glGetShaderiv(vertex_shader, GL_INFO_LOG_LENGTH, &max_length);
         char error_log[1024];
         glGetShaderInfoLog(vertex_shader, max_length, &max_length, &error_log[0]);
-        sysLogPrintf(LOG_ERROR, "Failed to compile this vertex shader (ID %llx, %x):\n%s", shader_id0, shader_id1, vs_buf);
-        sysFatalError("Vertex shader compilation failed:\n%s", error_log);
+        if (gl_context_lost()) {
+            sysLogPrintf(LOG_WARNING, "GL: context lost, vertex shader not compiled");
+        } else {
+            sysLogPrintf(LOG_ERROR, "Failed to compile this vertex shader (ID %llx, %x):\n%s", shader_id0, shader_id1, vs_buf);
+            sysFatalError("Vertex shader compilation failed:\n%s", error_log);
+        }
     }
 
     GLuint fragment_shader = glCreateShader(GL_FRAGMENT_SHADER);
@@ -570,8 +588,12 @@ static struct ShaderProgram* gfx_opengl_create_and_load_new_shader(uint64_t shad
         glGetShaderiv(fragment_shader, GL_INFO_LOG_LENGTH, &max_length);
         char error_log[1024];
         glGetShaderInfoLog(fragment_shader, max_length, &max_length, &error_log[0]);
-        sysLogPrintf(LOG_ERROR, "Failed to compile this fragment shader (ID %llx, %x):\n%s", shader_id0, shader_id1, fs_buf);
-        sysFatalError("Fragment shader compilation failed:\n%s", error_log);
+        if (gl_context_lost()) {
+            sysLogPrintf(LOG_WARNING, "GL: context lost, fragment shader not compiled");
+        } else {
+            sysLogPrintf(LOG_ERROR, "Failed to compile this fragment shader (ID %llx, %x):\n%s", shader_id0, shader_id1, fs_buf);
+            sysFatalError("Fragment shader compilation failed:\n%s", error_log);
+        }
     }
 
     GLuint shader_program = glCreateProgram();

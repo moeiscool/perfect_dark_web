@@ -6,11 +6,17 @@
 #include "types.h"
 #ifndef PLATFORM_N64
 #include "system.h"
+#include "net.h"
 #endif
 
 void frametimeInit(void)
 {
 	g_Vars.thisframestartt = osGetCount();
+#ifndef PLATFORM_N64
+	if (netIsActive()) {
+		g_Vars.thisframestartt = 0;
+	}
+#endif
 	g_Vars.prevframestartt = g_Vars.thisframestartt;
 }
 
@@ -36,6 +42,18 @@ void frametimeCalculate(void)
 	u32 diffframet;
 	u32 diffframe60;
 	u32 diffframe240;
+
+#ifndef PLATFORM_N64
+	if (netIsActive()) {
+		// netplay: every tick is exactly 1/60 s on every machine, whatever the real time was
+		g_Vars.diffframet = CYCLES_PER_FRAME;
+		g_Vars.lostframetime60t = 0;
+		g_Vars.lostframetime240t = 0;
+		g_Vars.mininc60 = 1;
+		frametimeApply(1, 4, g_Vars.thisframestartt + CYCLES_PER_FRAME);
+		return;
+	}
+#endif
 
 	do {
 		count = osGetCount();

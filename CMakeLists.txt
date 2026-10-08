@@ -236,10 +236,15 @@ set(WEB_LINK_FLAGS
   # the game runs a blocking main loop; ASYNCIFY lets it yield to the browser every frame
   -sASYNCIFY=1
   -sASYNCIFY_STACK_SIZE=131072
+  # the game only pauses (tick wait, sleep, frame wait) through direct calls; without this, every
+  # function that calls through a pointer (most of the game) gets slow unwind/rewind instrumentation
+  -sASYNCIFY_IGNORE_INDIRECT=1
   # menu items store either a text ID or a function pointer in the same field and tell them apart
   # with `< 0x5a00` (menuResolveText). wasm function pointers are table indices starting at 1, so
   # start the table above that or every dynamic menu label is read as a text ID
   -sTABLE_BASE=32768
+  # likewise keep static data well above small integers (text IDs and the like)
+  -sGLOBAL_BASE=1048576
   -sALLOW_MEMORY_GROWTH=1
   -sINITIAL_MEMORY=268435456
   -sSTACK_SIZE=8388608
@@ -248,11 +253,17 @@ set(WEB_LINK_FLAGS
   -lidbfs.js
   -sMODULARIZE=1
   -sEXPORT_NAME=createPerfectDark
-  -sEXPORTED_RUNTIME_METHODS=FS,IDBFS,addRunDependency,removeRunDependency
-  -sENVIRONMENT=web
+  -sEXPORTED_RUNTIME_METHODS=FS,IDBFS,addRunDependency,removeRunDependency,HEAPU8
+  # web: the game in the browser; node/worker: the multiplayer server's headless match instance
+  # (both must be this exact binary so match snapshots line up)
+  -sENVIRONMENT=web,worker,node
   -sEXIT_RUNTIME=0
   # optimize the final wasm even though the C code is compiled with -Og
   -O2
+  # keep function names in the wasm so crashes in the browser or the server have readable stacks
+  --profiling-funcs
+  # address map of every global, used to find the game state for netplay snapshots (web/net/snapranges.js)
+  -Wl,--Map=pd.map
 )
 string(REPLACE ";" " " WEB_LINK_FLAGS_STR "${WEB_LINK_FLAGS}")
 set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} ${WEB_LINK_FLAGS_STR}")
@@ -422,6 +433,10 @@ if(EMSCRIPTEN)
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
       ${CMAKE_SOURCE_DIR}/web/index.html
       ${CMAKE_SOURCE_DIR}/web/pd-web.js
+      ${CMAKE_SOURCE_DIR}/web/net/nethost.js
+      ${CMAKE_SOURCE_DIR}/web/net-client.js
       ${CMAKE_BINARY_DIR}/
+    # memory ranges of the game state, for netplay snapshots
+    COMMAND node ${CMAKE_SOURCE_DIR}/web/net/snapranges.js ${CMAKE_BINARY_DIR}/pd.map ${CMAKE_BINARY_DIR}/pd.snap.json
   )
 endif()
