@@ -110,6 +110,7 @@ void netRequestJoin(const char *server, const char *room, const char *password, 
 
 // gl.c
 int glLoadFunctions(void);
+void glNewInstance(void);
 void glReportErrors(const char *where);
 
 #endif

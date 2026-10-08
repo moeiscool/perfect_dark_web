@@ -212,10 +212,20 @@ void w2c_env_glGetProgramiv(struct w2c_env *e, u32 prog, u32 pname, u32 p) { pGe
 void w2c_env_glGetShaderInfoLog(struct w2c_env *e, u32 sh, u32 size, u32 len, u32 log) { pGetShaderInfoLog(sh, I(size), wptr(len), wptr(log)); }
 void w2c_env_glGetShaderiv(struct w2c_env *e, u32 sh, u32 pname, u32 p) { pGetShaderiv(sh, pname, wptr(p)); }
 
+// strings handed to the game live in its heap, so they're made again for each new instance
+static uint32_t stringCache[5];
+static uint32_t extString;
+
+void glNewInstance(void)
+{
+	memset(stringCache, 0, sizeof(stringCache));
+	extString = 0;
+}
+
 u32 w2c_env_glGetString(struct w2c_env *e, u32 name)
 {
 	// the game takes the ES 3.0 path, as in the browser
-	static uint32_t cache[5];
+	uint32_t *cache = stringCache;
 	int idx;
 	char text[256];
 	switch (name) {
@@ -234,14 +244,13 @@ u32 w2c_env_glGetString(struct w2c_env *e, u32 name)
 
 u32 w2c_env_glGetStringi(struct w2c_env *e, u32 name, u32 index)
 {
-	static uint32_t ext;
 	if (name != GL_EXTENSIONS || index != 0) {
 		return 0;
 	}
-	if (!ext) {
-		ext = hostNewString("GL_PDHOST_native");
+	if (!extString) {
+		extString = hostNewString("GL_PDHOST_native");
 	}
-	return ext;
+	return extString;
 }
 
 u32 w2c_env_glGetUniformLocation(struct w2c_env *e, u32 prog, u32 name) { return (u32)pGetUniformLocation(prog, wptr(name)); }

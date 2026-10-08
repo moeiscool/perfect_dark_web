@@ -151,6 +151,7 @@ void hostRestart(void)
 static void runInstance(const char **args, int nargs)
 {
 	wasm2c_pd_instantiate(&g_pd, &g_Env, &g_Wasi);
+	glNewInstance();
 	platResendPads();
 
 	if (setjmp(g_RestartJmp) == 0) {
