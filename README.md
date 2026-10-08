@@ -273,6 +273,10 @@ node web/server.js --rom /private/path/pd.ntsc-final.z64
 
 Open `https://<server>:8443/` and accept the certificate warning once. Browsers only allow gamepads on HTTPS pages (or `http://localhost`), and installing as an app needs HTTPS too.
 
+#### On Cloudflare Workers
+
+[cloudlare_worker_server/](cloudlare_worker_server/README.md) runs the whole web version (game files and online lobby) on Cloudflare Workers, with no server of your own and no ROM in the cloud: matches are relayed, and the players' games provide the state for players joining. `npm run deploy` there after building.
+
 #### How perfectdark.m03.ca is deployed
 
 Two processes on one server under pm2 ([deploy/ecosystem.config.js](deploy/ecosystem.config.js)), behind a port 80 proxy and Cloudflare, which provides HTTPS:

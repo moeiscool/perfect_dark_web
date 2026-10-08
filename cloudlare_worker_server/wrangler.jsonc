@@ -1,0 +1,35 @@
+{
+  // Perfect Dark on Cloudflare Workers: game files, /server-config.json and the online lobby (/net).
+  // See README.md. Run `npm run sync` first to copy the game build into public/.
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "perfectdark",
+  "main": "src/worker.js",
+  "compatibility_date": "2025-09-01",
+
+  "assets": {
+    "directory": "./public",
+    "binding": "ASSETS",
+    "not_found_handling": "404-page"
+  },
+
+  "durable_objects": {
+    "bindings": [{ "name": "LOBBY", "class_name": "LobbyDO" }]
+  },
+  // SQLite-backed Durable Objects are the kind available on the Workers free plan
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["LobbyDO"] }],
+
+  "vars": {
+    // matches at once (each one keeps a 60 Hz clock running in the Durable Object)
+    "MAX_ROOMS": "4"
+    // "LOBBY_URL": "perfectdarklobby.m03.ca"  // only if the game is served from another host
+  },
+
+  // Serve everything on your domain (the domain's DNS must be on Cloudflare). Uncomment, then
+  // `npm run deploy` creates the DNS records and certificates:
+  // "routes": [
+  //   { "pattern": "perfectdark.m03.ca", "custom_domain": true },
+  //   { "pattern": "perfectdarklobby.m03.ca", "custom_domain": true }
+  // ],
+
+  "observability": { "enabled": true }
+}
