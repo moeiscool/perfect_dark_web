@@ -576,9 +576,17 @@ void menuGetItemBlocksRequired(struct menuitem *item, s32 *numwords)
 	case MENUITEMTYPE_PLAYERSTATS:
 		*numwords = 5;
 		break;
+#ifndef PLATFORM_N64
+	case MENUITEMTYPE_KEYBOARD:
+		*numwords = (sizeof(struct menuitemdata_keyboard) + 3) / 4;
+		break;
+	case MENUITEMTYPE_10:
+	case MENUITEMTYPE_16:
+#else
 	case MENUITEMTYPE_KEYBOARD:
 	case MENUITEMTYPE_10:
 	case MENUITEMTYPE_16:
+#endif
 		*numwords = 3;
 		break;
 	}

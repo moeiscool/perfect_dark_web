@@ -1,5 +1,6 @@
-// Online multiplayer client: lobby UI, and running an online match in this browser.
-// Talks to the server's lobby (web/net/lobby.js) over a WebSocket at /net.
+// Online multiplayer client: the lobby connection for the game's Online menu (port/src/lobby.c),
+// and running an online match in this browser. Talks to a lobby server (web/net/lobby.js) over a
+// WebSocket at /net: by default the one this page came from, or another picked in the game.
 // Needs nethost.js (window.PDNet) and pd-web.js (window.PDWeb) loaded first.
 (() => {
   'use strict';
@@ -13,17 +14,15 @@
   const SESSION_MAX_AGE_MS = 60 * 1000; // matches the server's reconnect grace period
   const SESSION_ORPHAN_MS = 15 * 1000;   // a session whose tab hasn't checked in this long was closed
   const TAB_KEY = 'pd-online-tab';
+  const INTENT_KEY = 'pd-online-intent'; // the match to join after the page reloads
+  const RETURN_KEY = 'pd-online-return'; // open the game's Online menu after the page reloads
 
   const $ = (id) => document.getElementById(id);
   const ui = {
     panel: $('online'),
     status: $('online-status'),
-    name: $('online-name'),
-    rooms: $('online-rooms'),
-    empty: $('online-empty'),
-    createToggle: $('online-create-toggle'),
-    createForm: $('online-create'),
     rejoin: $('online-rejoin'),
+    back: $('online-back'),
     rejoinText: $('online-rejoin-text'),
     hud: $('net-hud'),
     hudText: $('net-hud-text'),
@@ -44,7 +43,9 @@
   let lastPing = 0;
   let rtt = 0;
   let rejoinCandidate = null; // session offered by the Rejoin button
-  let autoRejoin = null;      // session to rejoin right away (after a graphics reset)
+  let pendingRejoin = null;   // session to rejoin once connected
+  let pendingIntent = null;   // match picked in the game's menu, joined once connected
+  let matchServer = null;     // lobby server of the match (see lobbyUrl)
   let lastSessionSave = 0;
   const AUTOREJOIN_KEY = 'pd-online-autorejoin';
 
@@ -97,8 +98,9 @@
     return null;
   }
 
+  // the agent name the game's menu passed along
   function playerName() {
-    return (ui.name.value || '').trim().slice(0, 12) || 'Agent';
+    return (store.get(NAME_KEY) || '').trim().slice(0, 12) || 'Agent';
   }
 
   function setStatus(text, isError) {
@@ -142,8 +144,7 @@
 
   function connect() {
     clearTimeout(reconnectTimer);
-    const url = `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/net`;
-    ws = new WebSocket(url);
+    ws = new WebSocket(lobbyUrl(matchServer));
     ws.binaryType = 'arraybuffer';
 
     ws.onopen = () => {
@@ -202,13 +203,17 @@
         if (!msg.enabled) {
           setStatus('This server can\'t host online matches right now.', true);
         } else {
-          setStatus('Connected. Join a match or create one.');
+          setStatus('Connected.');
         }
-        fillCreateForm();
-        tryAutoRejoin();
+        if (pendingIntent) {
+          const intent = pendingIntent;
+          pendingIntent = null;
+          joinIntent(intent);
+        } else if (pendingRejoin) {
+          rejoinWhenReady();
+        }
         break;
       case 'rooms':
-        renderRooms(msg.rooms);
         break;
       case 'joined':
         onJoined(msg);
@@ -238,16 +243,18 @@
       case 'left':
         break;
       case 'error':
-        if (msg.code === 'build') {
+        if (msg.code === 'build' && isDefaultServer(matchServer)) {
           setStatus(msg.message, true);
           setTimeout(() => location.reload(), 1500);
+        } else if (msg.code === 'build') {
+          match = null;
+          failJoin('That server runs a different version of the game.');
         } else if (match && !match.module) {
           // failed to get into the match we were trying to start
           match = null;
           clearSession();
           document.body.classList.remove('is-online');
-          setStatus(msg.message, true);
-          showLobby();
+          failJoin(msg.message);
         } else {
           setStatus(msg.message, true);
         }
@@ -282,124 +289,198 @@
   }
 
   // ---------------------------------------------------------------------------
-  // lobby UI
+  // the in-game Online menu (port/src/lobby.c) and handing over to a match
 
-  function fillCreateForm() {
-    const f = ui.createForm;
-    if (!server || f.dataset.filled) {
-      return;
+  // "host[:port]" or a ws:// / wss:// URL -> the lobby's WebSocket URL
+  function lobbyUrl(serverName) {
+    const s = String(serverName || '').trim() || defaultServer();
+    if (/^wss?:\/\//i.test(s)) {
+      return /\/net\/?$/.test(s) ? s : `${s.replace(/\/$/, '')}/net`;
     }
-    const opt = (sel, value, label) => {
-      const o = document.createElement('option');
-      o.value = value;
-      o.textContent = label;
-      sel.appendChild(o);
+    const host = s.replace(/^https?:\/\//i, '').replace(/\/.*$/, '');
+    // a page served over HTTPS can only open secure WebSockets
+    const secure = location.protocol === 'https:' || /:443$/.test(host);
+    return `${secure ? 'wss' : 'ws'}://${host}/net`;
+  }
+
+  function defaultServer() {
+    return (config && config.lobby) || location.host;
+  }
+
+  function isDefaultServer(serverName) {
+    return !serverName || lobbyUrl(serverName) === lobbyUrl(defaultServer());
+  }
+
+  // the game's own connection, for listing, creating and joining matches from its menu
+  const gameLobby = { ws: null, want: null, queue: [], retry: 0 };
+
+  function lobbyOpen(serverName) {
+    lobbyClose();
+    gameLobby.want = serverName || defaultServer();
+    gameLobby.queue = [];
+    const open = () => {
+      if (!gameLobby.want) {
+        return;
+      }
+      let sock;
+      try {
+        sock = new WebSocket(lobbyUrl(gameLobby.want));
+      } catch (e) {
+        console.warn(`lobby: ${e.message}`);
+        gameLobby.retry = setTimeout(open, 3000);
+        return;
+      }
+      gameLobby.ws = sock;
+      sock.onmessage = (ev) => {
+        if (typeof ev.data === 'string' && gameLobby.ws === sock) {
+          gameLobby.queue.push(ev.data);
+          if (gameLobby.queue.length > 64) {
+            gameLobby.queue.shift();
+          }
+        }
+      };
+      sock.onclose = () => {
+        if (gameLobby.ws === sock) {
+          gameLobby.ws = null;
+          gameLobby.retry = setTimeout(open, 3000);
+        }
+      };
     };
-    opt(f.stage, '', 'Random');
-    for (const [id, name] of Object.entries(server.arenas).sort((a, b) => a[1].localeCompare(b[1]))) {
-      opt(f.stage, id, name);
-    }
-    server.scenarios.forEach((name, i) => opt(f.scenario, i, name));
-    server.weaponSets.forEach((name, i) => opt(f.weaponset, i, name));
-    f.weaponset.value = '1';
-    f.stage.value = '50'; // Skedar
-    f.dataset.filled = '1';
+    open();
+    return true;
   }
 
-  function fmtTime(secs) {
-    if (secs === null || secs === undefined) {
-      return 'no limit';
+  function lobbyClose() {
+    gameLobby.want = null;
+    clearTimeout(gameLobby.retry);
+    if (gameLobby.ws) {
+      const sock = gameLobby.ws;
+      gameLobby.ws = null;
+      sock.close();
     }
-    return `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, '0')} left`;
+    gameLobby.queue = [];
   }
 
-  function renderRooms(rooms) {
-    ui.rooms.innerHTML = '';
-    ui.empty.hidden = rooms.length > 0;
+  // 0 = closed, 1 = connecting, 2 = open (port/src/lobby.c TRANSPORT_*)
+  function lobbyState() {
+    if (!gameLobby.ws) {
+      return gameLobby.want ? 1 : 0;
+    }
+    return gameLobby.ws.readyState === WebSocket.OPEN ? 2 : gameLobby.ws.readyState === WebSocket.CONNECTING ? 1 : 0;
+  }
 
-    // joinable matches first, then the busiest
-    const freeOf = (r) => (r.state === 'playing' ? (r.free ?? r.players.filter((p) => !p).length) : 0);
-    rooms = [...rooms].sort((a, b) => (freeOf(b) > 0) - (freeOf(a) > 0) ||
-      b.players.filter(Boolean).length - a.players.filter(Boolean).length);
+  function lobbySend(text) {
+    if (gameLobby.ws && gameLobby.ws.readyState === WebSocket.OPEN) {
+      gameLobby.ws.send(text);
+    }
+  }
 
-    for (const r of rooms) {
-      const players = r.players.filter(Boolean);
-      const free = freeOf(r);
-      const ended = r.state !== 'playing';
-      const canJoin = !ended && free > 0 && server && server.enabled;
+  function lobbyRecv() {
+    return gameLobby.queue.length ? gameLobby.queue.shift() : null;
+  }
 
-      const card = document.createElement('div');
-      card.className = `room${canJoin ? '' : ' room-closed'}`;
+  function setFlag(key) {
+    try { sessionStorage.setItem(key, '1'); } catch { /* ignore */ }
+  }
 
-      // title + status
-      const head = document.createElement('div');
-      head.className = 'room-head';
-      const title = document.createElement('strong');
-      title.textContent = r.name;
-      if (r.locked) {
-        const lock = document.createElement('span');
-        lock.className = 'room-lock';
-        lock.title = 'Needs a password';
-        lock.textContent = '🔒';
-        title.appendChild(lock);
+  function takeFlag(key) {
+    try {
+      const v = sessionStorage.getItem(key) === '1';
+      sessionStorage.removeItem(key);
+      return v;
+    } catch {
+      return false;
+    }
+  }
+
+  // The game can't switch into a match in place, so the page reloads and joins (see init)
+  async function enterMatch(intent) {
+    lobbyClose();
+    store.set(NAME_KEY, String(intent.name || 'Agent').slice(0, 12));
+    try {
+      sessionStorage.setItem(INTENT_KEY, JSON.stringify({
+        server: intent.server || defaultServer(),
+        roomId: intent.roomId,
+        password: intent.password || undefined,
+        at: Date.now(),
+      }));
+    } catch { /* ignore */ }
+    await window.PDWeb.flush(); // keep the agent's progress and settings
+    location.reload();
+  }
+
+  // after a match: restart the game and open its Online menu
+  function backToGame() {
+    setFlag(RETURN_KEY);
+    window.PDWeb.autostartNextLoad();
+    location.hash = '';
+    location.reload();
+  }
+
+  function takeIntent() {
+    try {
+      const intent = JSON.parse(sessionStorage.getItem(INTENT_KEY) || 'null');
+      sessionStorage.removeItem(INTENT_KEY);
+      return intent && Date.now() - intent.at < 60 * 1000 ? intent : null;
+    } catch {
+      return null;
+    }
+  }
+
+  // joins the match the game's menu picked, once the ROM is loaded
+  function joinIntent(intent) {
+    const started = Date.now();
+    const attempt = () => {
+      if (window.PDWeb.romBytes()) {
+        send({ type: 'hello', name: playerName(), clientId: clientId(), build: config.build });
+        const prev = usableSession();
+        send({
+          type: 'join',
+          roomId: intent.roomId,
+          password: intent.password,
+          token: prev && prev.roomId === intent.roomId ? prev.token : undefined,
+        });
+        match = { pending: true };
+        setStatus('Joining the match…');
+      } else if (Date.now() - started < 15000) {
+        setTimeout(attempt, 300); // the ROM is still being loaded from browser storage
+      } else {
+        failJoin('Choose your ROM first.');
       }
-      const pill = document.createElement('span');
-      pill.className = `room-pill ${ended ? 'pill-ended' : free > 0 ? 'pill-open' : 'pill-full'}`;
-      pill.textContent = ended ? 'Finished' : free > 0 ? 'Open' : 'Full';
-      head.append(title, pill);
-
-      // what kind of match
-      const sub = document.createElement('div');
-      sub.className = 'room-sub';
-      sub.textContent = [
-        r.scenarioName,
-        r.arena,
-        r.bots ? `${r.bots} bot${r.bots === 1 ? '' : 's'}` : 'no bots',
-        ended ? 'match over' : fmtTime(r.timeLeft),
-      ].join(' · ');
-
-      // slots: one marker per player slot, then "2 of 4 slots free"
-      const slots = document.createElement('div');
-      slots.className = 'room-slots';
-      const pips = document.createElement('span');
-      pips.className = 'pips';
-      r.players.forEach((name, i) => {
-        const pip = document.createElement('span');
-        pip.className = `pip${name ? ' pip-taken' : ''}`;
-        pip.title = name ? name : `Slot ${i + 1}: free`;
-        pips.appendChild(pip);
-      });
-      const freeText = document.createElement('span');
-      freeText.className = `free ${free > 0 && !ended ? 'free-yes' : 'free-no'}`;
-      freeText.textContent = ended ? `${players.length} played`
-        : free > 0 ? `${free} of ${r.players.length} slots free` : 'No free slots';
-      slots.append(pips, freeText);
-      if (r.reservedSlots) {
-        const held = document.createElement('small');
-        held.className = 'held';
-        held.textContent = `(${r.reservedSlots} held for a player reconnecting)`;
-        slots.appendChild(held);
-      }
-
-      const who = document.createElement('div');
-      who.className = 'room-players';
-      who.textContent = players.length ? `Playing: ${players.join(', ')}` : 'Nobody playing yet';
-
-      const info = document.createElement('div');
-      info.className = 'room-info';
-      info.append(head, sub, slots, who);
-
-      const btn = document.createElement('button');
-      btn.type = 'button';
-      btn.className = canJoin ? 'join primary' : 'join';
-      btn.textContent = ended ? 'Finished' : free > 0 ? 'Join' : 'Full';
-      btn.disabled = !canJoin;
-      btn.addEventListener('click', () => joinRoom(r));
-
-      card.append(info, btn);
-      ui.rooms.appendChild(card);
-    }
+    };
+    attempt();
   }
+
+  function failJoin(text) {
+    setStatus(text, true);
+    ui.back.hidden = false;
+    showLobby();
+  }
+
+  ui.rejoin.addEventListener('click', () => {
+    const s = rejoinCandidate || usableSession();
+    ui.rejoin.hidden = true;
+    if (s && requireRom()) {
+      matchServer = s.server || defaultServer();
+      pendingRejoin = s;
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        sendRejoin();
+      } else {
+        connect();
+      }
+      setStatus('Rejoining…');
+    }
+  });
+
+  function sendRejoin() {
+    const s = pendingRejoin;
+    pendingRejoin = null;
+    send({ type: 'hello', name: playerName(), clientId: clientId(), build: config.build });
+    send({ type: 'join', roomId: s.roomId, token: s.token });
+    match = { pending: true };
+  }
+
+  ui.back.addEventListener('click', backToGame);
 
   function requireRom() {
     if (!window.PDWeb || !window.PDWeb.romBytes()) {
@@ -408,67 +489,6 @@
     }
     return true;
   }
-
-  function joinRoom(room) {
-    if (!requireRom()) {
-      return;
-    }
-    let password;
-    if (room.locked) {
-      password = prompt('Password for this match:');
-      if (password === null) {
-        return;
-      }
-    }
-    store.set(NAME_KEY, playerName());
-    send({ type: 'hello', name: playerName(), clientId: clientId(), build: config.build });
-    const prev = usableSession();
-    send({ type: 'join', roomId: room.id, password, token: prev && prev.roomId === room.id ? prev.token : undefined });
-    match = { pending: true };
-    setStatus('Joining…');
-  }
-
-  ui.createToggle.addEventListener('click', () => {
-    ui.createForm.hidden = !ui.createForm.hidden;
-  });
-
-  ui.createForm.addEventListener('submit', (e) => {
-    e.preventDefault();
-    if (!requireRom()) {
-      return;
-    }
-    const f = ui.createForm;
-    store.set(NAME_KEY, playerName());
-    send({ type: 'hello', name: playerName(), clientId: clientId(), build: config.build });
-    send({
-      type: 'create',
-      settings: {
-        name: f.roomname.value,
-        stage: f.stage.value,
-        scenario: f.scenario.value,
-        timelimit: f.timelimit.value,
-        scorelimit: f.scorelimit.value,
-        bots: f.bots.value,
-        botDifficulty: f.botDifficulty.value,
-        weaponset: f.weaponset.value,
-        teams: f.teams.checked,
-        password: f.password.value,
-      },
-    });
-    match = { pending: true };
-    setStatus('Starting the match…');
-  });
-
-  ui.rejoin.addEventListener('click', () => {
-    const s = rejoinCandidate || usableSession();
-    ui.rejoin.hidden = true;
-    if (s && requireRom()) {
-      send({ type: 'hello', name: playerName(), clientId: clientId(), build: config.build });
-      send({ type: 'join', roomId: s.roomId, token: s.token });
-      match = { pending: true };
-      setStatus('Rejoining…');
-    }
-  });
 
   function showLobby() {
     window.PDWeb.showOverlay();
@@ -482,7 +502,7 @@
   }
 
   async function onJoined(msg) {
-    session = { roomId: msg.roomId, token: msg.token, slot: msg.slot, at: Date.now() };
+    session = { roomId: msg.roomId, token: msg.token, slot: msg.slot, server: matchServer, at: Date.now() };
     session.tab = tabId();
     store.set(sessionKey(), JSON.stringify(session));
 
@@ -648,9 +668,8 @@
   function leaveToLobby() {
     send({ type: 'leave' });
     clearSession();
-    // the game can't be unloaded from the page; reload straight back into the lobby
-    location.hash = 'online';
-    location.reload();
+    // the match can't be unloaded from the page; reload into the game's Online menu
+    backToGame();
   }
 
   ui.leave.addEventListener('click', () => {
@@ -804,19 +823,15 @@
   });
   document.addEventListener('visibilitychange', reloadAndRejoin);
 
-  function tryAutoRejoin() {
-    if (!autoRejoin || !server) {
-      return;
-    }
+  function rejoinWhenReady() {
     const started = Date.now();
     const attempt = () => {
+      if (!pendingRejoin) {
+        return;
+      }
       if (window.PDWeb.romBytes()) {
-        const s = autoRejoin;
-        autoRejoin = null;
         ui.rejoin.hidden = true;
-        send({ type: 'hello', name: playerName(), clientId: clientId(), build: config.build });
-        send({ type: 'join', roomId: s.roomId, token: s.token });
-        match = { pending: true };
+        sendRejoin();
         setStatus('Rejoining…');
       } else if (Date.now() - started < 15000) {
         setTimeout(attempt, 300); // the ROM is still being loaded from browser storage
@@ -828,8 +843,6 @@
   // ---------------------------------------------------------------------------
 
   async function init() {
-    ui.name.value = store.get(NAME_KEY) || '';
-    ui.name.addEventListener('change', () => store.set(NAME_KEY, playerName()));
     try {
       config = await (await fetch('server-config.json', { cache: 'no-store' })).json();
     } catch {
@@ -840,7 +853,16 @@
       return;
     }
     ui.panel.hidden = false;
-    setStatus('Connecting…');
+
+    // a match picked in the game's Online menu
+    const intent = takeIntent();
+    if (intent) {
+      matchServer = intent.server;
+      pendingIntent = intent;
+      setStatus('Joining the match…');
+      connect();
+      return;
+    }
 
     const prev = usableSession();
     rejoinCandidate = prev;
@@ -852,21 +874,29 @@
     // this tab's own session (it was reloaded or discarded and restored), or after a graphics
     // reset: go straight back in. A session from another, closed tab is offered with the button.
     if (prev && (wantAuto || prev.tab === tabId())) {
-      autoRejoin = prev;
-    }
-    if (prev) {
+      matchServer = prev.server || defaultServer();
+      pendingRejoin = prev;
+      setStatus('Rejoining your match…');
+      connect();
+    } else if (prev) {
       ui.rejoinText.textContent = 'You were in a match a moment ago.';
       ui.rejoin.hidden = false;
     }
-    if (location.hash === '#online') {
-      ui.panel.scrollIntoView();
-    }
-    connect();
   }
 
   window.PDOnline = {
     init,
     build: () => config && config.build,
+    clientId,
+    defaultServer,
+    // used by the game (port/src/lobby.c)
+    lobbyOpen,
+    lobbyClose,
+    lobbyState,
+    lobbySend,
+    lobbyRecv,
+    enterMatch,
+    takeReturnToMenu: () => takeFlag(RETURN_KEY),
     // for troubleshooting from the console
     vacant: () => match && match.module && [0, 1, 2, 3].map((i) => match.module._netGetSlotVacant(i)),
     scores: () => match && match.module && readScores(),

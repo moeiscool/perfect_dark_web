@@ -48,6 +48,17 @@
   };
 
   let romBytes = null;
+  const AUTOSTART_KEY = 'pd-autostart';
+  // set when the page reloads out of an online match, to go straight back into the game
+  const autostart = (() => {
+    try {
+      const v = sessionStorage.getItem(AUTOSTART_KEY) === '1';
+      sessionStorage.removeItem(AUTOSTART_KEY);
+      return v;
+    } catch (e) {
+      return false;
+    }
+  })();
   let module = null;
   let syncing = null; // promise of the running save sync, if any
   let syncAgain = false;
@@ -186,6 +197,10 @@
         const { title } = validateRom(bytes);
         romBytes = bytes;
         showRomReady(`${title} (remembered from last time)`);
+        if (autostart) {
+          // back from an online match (web/net-client.js)
+          startGame().catch(() => {});
+        }
       }
     } catch (e) {
       console.warn('could not load cached ROM', e);
@@ -665,6 +680,16 @@
   window.PDWeb = {
     romBytes: () => romBytes,
     startGame,
+    // writes settings and saves to browser storage, eg. before the page reloads
+    flush: async () => {
+      saveConfig();
+      await syncSaves();
+      await syncSaves(); // includes changes made while an earlier sync was running
+    },
+    // start the game without the Start button after the next reload
+    autostartNextLoad: () => {
+      try { sessionStorage.setItem(AUTOSTART_KEY, '1'); } catch (e) { /* ignore */ }
+    },
     showOverlay: () => {
       ui.overlay.hidden = false;
       document.body.classList.remove('is-running');
