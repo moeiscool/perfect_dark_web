@@ -144,6 +144,19 @@ cp "$GLSDK/sdk/lib/libSceAgc.so" "$GLSDK/sdk/lib/libSceAgcDriver.so" "$APPSDK/ta
 
 # title identity, icon, and an assets folder for the ROM
 (cd "$APP" && TITLE_ID="$TITLE_ID" APP_NAME="$APP_NAME" APP_CATEGORY=game bash tools/init-project.sh sce_sys/param.json)
+# the GL driver needs the SDK app's memory setup (GPU/CPU page tables, address space), which the
+# boilerplate's param.json leaves out
+python3 - "$APP/sce_sys/param.json" "$GLSRC/native-app/param.json" <<'PY'
+import json, sys
+dst, src = sys.argv[1], sys.argv[2]
+param, sdk = json.load(open(dst)), json.load(open(src))
+for key in ("amm", "kernel"):
+    if key not in sdk:
+        sys.exit(f"SDK param.json has no {key}")
+    param[key] = sdk[key]
+json.dump(param, open(dst, "w"), indent=2)
+open(dst, "a").write("\n")
+PY
 mkdir -p "$APP/assets"
 cp "$REPO/ps5/assets/README.txt" "$APP/assets/"
 
