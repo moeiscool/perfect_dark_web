@@ -428,8 +428,9 @@ if(NINTENDO_SWITCH)
 endif()
 
 if(EMSCRIPTEN)
-  # put the page and loader next to pd.js/pd.wasm so the build dir can be served as-is (see web/server.js)
-  add_custom_command(TARGET pd POST_BUILD
+  # put the page and loader next to pd.js/pd.wasm so the build dir can be served as-is (see web/server.js);
+  # a separate target so page changes are copied even when the game doesn't need relinking
+  add_custom_target(webpage ALL
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
       ${CMAKE_SOURCE_DIR}/web/index.html
       ${CMAKE_SOURCE_DIR}/web/pd-web.js
@@ -439,6 +440,8 @@ if(EMSCRIPTEN)
       ${CMAKE_SOURCE_DIR}/web/sw.js
       ${CMAKE_BINARY_DIR}/
     COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_SOURCE_DIR}/web/icons ${CMAKE_BINARY_DIR}/icons
+  )
+  add_custom_command(TARGET pd POST_BUILD
     # memory ranges of the game state, for netplay snapshots
     COMMAND node ${CMAKE_SOURCE_DIR}/web/net/snapranges.js ${CMAKE_BINARY_DIR}/pd.map ${CMAKE_BINARY_DIR}/pd.snap.json
   )
