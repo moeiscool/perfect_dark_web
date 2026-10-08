@@ -40,6 +40,57 @@ There are minor graphics- and gameplay-related issues, and possibly occasional c
 * Linux: i686, x86_64
 * MacOS: x86_64 (OS 10.9+), arm64 (OS 11.0+)
 * Nintendo Switch: arm64
+* Web browsers (WebAssembly), with online multiplayer: play at <https://perfectdark.m03.ca>
+
+## Play in your browser
+
+**Public server: <https://perfectdark.m03.ca>**
+
+Open it in Chrome, Edge, Brave or Firefox on a computer, choose your Perfect Dark ROM (NTSC v1.1, `.z64`/`.v64`/`.n64`) and press **Start**. The ROM stays on your computer: it is read by the page, remembered in your browser for next time, and never uploaded. Your agents, unlocks and settings are saved in the browser too.
+
+### Full window: install it as an app
+
+Browser fullscreen (F11) shows an exit button when the mouse reaches the top of the screen, which gets in the way of looking up. Install the page as an app instead and play in its own window, maximized:
+
+* **Chrome / Edge / Brave:** the install icon at the right of the address bar, or the **Install app** button on the start screen (or menu → *Cast, save and share* → *Install page as app*).
+* Then open **Perfect Dark** from your apps. The window has no address bar, and the mouse can reach every edge.
+
+### Controls
+
+| Input | Action |
+| --- | --- |
+| `W` `A` `S` `D` | Move / strafe |
+| Mouse | Moves the crosshair; pushing it to the screen edge turns the view |
+| `C` | Recenter the crosshair (the cursor's current spot becomes the new center) |
+| Left click / `Space` | Fire |
+| Right click | Aim |
+| `E` / `R` | Use / reload |
+| Mouse wheel | Change weapon |
+| `Tab` / `Esc` | Pause menu |
+| Gamepad | Press any button to connect it; it works alongside the keyboard and mouse |
+| Hold **Select/View** (Xbox), **Minus** (Switch Pro) or the **touchpad** (PlayStation) | Scoreboard in online matches |
+
+The mouse is never locked to the page: the crosshair follows the cursor around a center point. Every binding can be changed in the game's options. Gamepads need an `https://` address (the public server is).
+
+### Saves
+
+Saves and settings are kept in the browser for that site, written as soon as the game saves. Use **Back up saves** on the start screen (or the top-right button while playing) to download them as a file, and **Restore from backup…** to load them in another browser or computer.
+
+### Online matches
+
+1. Start the game and pick your agent. Your agent's name is your name online.
+2. In the **Perfect Menu**, choose **Online Matches**. It lists the matches on the server with their free slots (`2/4 free`, `Full`, `Over`; `*` means a password is needed).
+3. Select a match to see its scenario, arena, bots, time left and who is playing, then **Join Match**. Or choose **Create Match…** to set up your own:
+   * name, arena (or random), scenario, weapon set, time limit (1-20 min), kill limit, 0-8 bots and their skill, teams, password.
+4. The page loads the match. Each player sees only their own view, full screen.
+   * Hold the scoreboard button (see Controls) to see the scores.
+   * "PLAYERNAME has joined" and similar notices appear on the right.
+   * **Leave** (top left) or the end of the match takes you back to the game, straight into Online Matches.
+   * If you lose the connection or reload, you rejoin the same slot with your score kept for a minute.
+
+Up to 4 players per match plus up to 8 bots, Combat Simulator only (no story missions). Your actions take effect after one round trip to the server, so a nearby server plays best.
+
+**Change Server…** in Online Matches connects to another lobby server: type its address (`host` or `host:port`) or pick the default again. Players see each other's matches when they use the same server. The choice is saved with your settings. Everyone in a match must run the same game build; a server running a different version says so.
 
 ## Download
 
@@ -193,39 +244,64 @@ Controls can be rebound in `pd.ini`. Default control scheme is as follows:
 
 ### Web browser (WebAssembly)
 
-The game can be built to WebAssembly and played in a browser. Only the NTSC v1.1 ROM is supported. The ROM is never put on the server: each player picks their own `.z64`/`.v64`/`.n64` dump on the page, and it is remembered in the browser along with saves and settings.
+The game can be built to WebAssembly and played in a browser (see [Play in your browser](#play-in-your-browser)). Only the NTSC v1.1 ROM is supported. The ROM is never served: each player picks their own dump on the page.
+
+#### Building
 
 1. Install the [Emscripten SDK](https://emscripten.org/docs/getting_started/downloads.html) (for example to `~/emsdk`), plus `cmake`, `python3` and Node.js 18+.
-2. Build: `EMSDK=~/emsdk web/build.sh`. This produces `build-web/pd.js`, `build-web/pd.wasm` and the page.
-3. Serve: `node web/server.js`. It serves `build-web/` over HTTP on port 8080 and HTTPS on port 8443 (with a self-signed certificate generated on first run). Use `--port`, `--https-port`, `--root`, `--cert`/`--key` or `--no-https` to change that.
-4. Open `https://<server>:8443/` and accept the certificate warning once. Browsers only allow gamepads on HTTPS pages (or `http://localhost`).
+2. Build: `EMSDK=~/emsdk web/build.sh`. This produces `build-web/` with `pd.js`, `pd.wasm`, `pd.snap.json` and the page (`index.html`, `pd-web.js`, `net-client.js`, `nethost.js`, `manifest.webmanifest`, `sw.js`, `icons/`).
 
-In the browser the mouse is never captured. The cursor's position relative to an anchor point moves the crosshair, and pushing the crosshair to the screen edge turns the view. Press `C` to recenter: the crosshair snaps to the middle and the cursor's current spot becomes the new anchor. The anchor is also reset whenever a menu closes. This mode can be turned on in desktop builds too with `Input.MouseFreeAim=1` in `pd.ini`. `Input.MouseFreeAimScale` and `Input.MouseRecenterKey` adjust it.
-
-A gamepad shows up after any of its buttons is pressed. It controls player 1 alongside the keyboard and mouse.
-
-Saves (the Game Pak, `eeprom.bin`) and settings (`pd.ini`) are kept in the browser's IndexedDB for that address. They are written as soon as the game saves, and the page asks the browser not to evict them. Use **Back up saves** (on the start screen, or the button in the top right corner while playing) to download them as a `.json` file, and **Restore from backup…** on the start screen to load them into another browser or after clearing site data. The `http://` and `https://` addresses count as different sites and keep separate saves. To trace the save system in the browser console, add `?args=--debug-pak` to the page address.
-
-#### Online multiplayer (Combat Simulator)
-
-The web server also hosts online matches: the **Online** section of the start page lists running matches and has a **Create match** form (arena, scenario, time and kill limits, weapons, 0-8 bots, teams, optional password). Each match has 4 player slots plus its bots. Players can join a match at any time, leave, and come back to the same slot (and score) within a minute; reloading the page rejoins automatically. Every browser shows only its own player's view.
-
-To enable it, install the server's one dependency and give it the ROM (it stays on the server and is never served):
+#### Running your own server
 
 ```
-cd web && npm install
-node server.js --rom /path/to/pd.ntsc-final.z64 [--max-rooms 4]
+cd web && npm install          # the lobby's one dependency (ws)
+node web/server.js --rom /private/path/pd.ntsc-final.z64
 ```
 
-How it works:
+`web/server.js` serves `build-web/` and, on the same port, the online lobby (WebSocket `/net`). The lobby runs every match itself, headless, which needs the ROM; it is read from `--rom` and never served (requests for ROM, `.ini` and `.log` files are refused).
 
-* **Lockstep.** Every machine in a match (the players' browsers and the server) runs the same simulation from the same seed and the same inputs. The server runs the authoritative copy headless (`web/net/headless.js`) and owns the clock: 60 times a second it combines each player's latest input into a tick and sends it to everyone. A player's own input therefore takes effect after one round trip to the server.
+| Option | Default | |
+| --- | --- | --- |
+| `--port` / `--https-port` | 8080 / 8443 | HTTP and HTTPS ports |
+| `--no-https` | | HTTP only (eg. behind a proxy or Cloudflare that does HTTPS) |
+| `--cert` / `--key` | self-signed | TLS certificate; without them one is generated on first run |
+| `--root` | `build-web` | directory to serve |
+| `--rom` | | ROM for running online matches; without it the lobby can't host |
+| `--max-rooms` | 4 | matches at once (each one uses about one CPU core at 60 ticks/s and a few hundred MB) |
+| `--no-lobby` | | serve the game only |
+| `--lobby-url` | | lobby server the game's Online menu uses by default (`host[:port]`); default: this server |
+
+Open `https://<server>:8443/` and accept the certificate warning once. Browsers only allow gamepads on HTTPS pages (or `http://localhost`), and installing as an app needs HTTPS too.
+
+#### How perfectdark.m03.ca is deployed
+
+Two processes on one server under pm2 ([deploy/ecosystem.config.js](deploy/ecosystem.config.js)), behind a port 80 proxy and Cloudflare, which provides HTTPS:
+
+* `perfectdark.m03.ca` → `server.js --port 4002 --no-https --no-lobby --lobby-url perfectdarklobby.m03.ca` (the game);
+* `perfectdarklobby.m03.ca` → `server.js --port 4003 --no-https --rom <private> --max-rooms 2` (lobby and matches).
+
+`deploy/deploy.sh user@host` builds, uploads only the served files and reloads pm2. Both processes must serve the same build: clients and lobby check that their `pd.wasm` matches.
+
+#### Settings and saves in the browser
+
+Saves (the Game Pak, `eeprom.bin`) and settings (`pd.ini`) live in the browser's IndexedDB for the page's address; the `http://` and `https://` addresses of a server count as different sites. The online server choice is `Net.LobbyServer` in `pd.ini` (empty = default). Add `?args=--debug-pak` to the page address to trace the save system in the console.
+
+The free-aim mouse mode used in the browser can be turned on in desktop builds too with `Input.MouseFreeAim=1` in `pd.ini`; `Input.MouseFreeAimScale` and `Input.MouseRecenterKey` adjust it.
+
+#### How online play works
+
+* **Lockstep.** Every machine in a match (the players' browsers and the server) runs the same simulation from the same seed and the same inputs. The server runs the authoritative copy headless (`web/net/headless.js`) and owns the clock: 60 times a second it combines each player's latest input into a tick and sends it to everyone.
 * **Determinism.** In a match the game uses a fixed timestep, a seeded RNG, a fresh Game Pak, and the same settings for every player (full-screen 16:9 view, FOV, etc.), regardless of the local `pd.ini` (`port/src/net.c`).
 * **Joining mid-match** uses a snapshot of the server's game state (about 1 MB compressed) instead of a replay. All game memory lives in a fixed-address arena (`port/src/simarena.c`) and the build records where the game's globals are (`pd.snap.json`), so a snapshot can be restored in any instance of the same build.
 * **Each browser draws only its own player.** The other players' render passes still run, because they contain game logic, but fast3d skips their geometry (`gfx_set_net_view`).
 * **Desync detection.** Clients report a state hash every second, and the server resynchronizes anyone who differs.
+* **The lobby** (`web/net/lobby.js`) speaks JSON over the WebSocket. The game's Online menu talks to it directly (`port/src/lobby.c`, `port/src/onlinemenu.c`), so any platform with a WebSocket transport sees the same matches; in the browser the page provides the transport and runs the match (`web/net-client.js`).
 
 Testing tools: `node web/net/selftest.js <rom>` checks determinism and snapshots without a browser, and `node web/net/testplayer.js <server url> <rom> [--create]` joins a server as a headless player with scripted inputs.
+
+#### Legal
+
+No ROM is included, and the files a server sends to players (the page, `pd.js`, `pd.wasm`) contain no ROM data or game assets: textures, models, sounds and text are read at run time from the ROM each player supplies, in their own browser. A server that hosts online matches needs its own ROM, which stays private on that server.
 
 ### Notes
 
