@@ -1,7 +1,7 @@
 # Perfect Dark port (008 Second Light)
 
-Demo : https://perfectdark.royal-cake-5abc.workers.dev
-Demo 2 : perfectdark.m03.ca
+- Demo (Cloudflare Worker) : https://perfectdark.royal-cake-5abc.workers.dev
+- Demo 2 (my own server through cloudflare proxy) : https://perfectdark.m03.ca
 
 This repository contains a work-in-progress port of the [Perfect Dark decompilation](https://github.com/n64decomp/perfect_dark) to modern platforms.
 
