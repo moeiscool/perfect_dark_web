@@ -1667,6 +1667,7 @@
 #define MENUITEMFLAG_LITERAL_TEXT            0x08000000
 #define MENUITEMFLAG_SLIDER_WIDE             0x10000000
 #define MENUITEMFLAG_SLIDER_DEFERRED         0x20000000
+#define MENUITEMFLAG_KEYBOARD_URL            0x40000000 // PC: keyboard types server addresses (: and - instead of ? and !)
 
 #define MENUITEMTYPE_LABEL       0x01
 #define MENUITEMTYPE_LIST        0x02

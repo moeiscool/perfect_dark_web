@@ -65,6 +65,7 @@ const char *lobbyGetStatus(void);
 // the server currently used ("" = default) and its display name
 const char *lobbyGetServer(void);
 const char *lobbyGetServerDisplay(void);
+void lobbySetServer(const char *server);
 const char *lobbyGetDefaultServer(void);
 
 s32 lobbyGetNumRooms(void);

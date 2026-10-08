@@ -9,6 +9,7 @@
 #include "bss.h"
 #include "game/mainmenu.h"
 #include "game/menu.h"
+#include "config.h"
 #include "system.h"
 #include "lobby.h"
 
@@ -23,9 +24,11 @@
 
 extern struct menudialogdef g_OnlineRoomMenuDialog;
 extern struct menudialogdef g_OnlineCreateMenuDialog;
+extern struct menudialogdef g_OnlineServerMenuDialog;
 extern struct menudialogdef g_OnlineJoinPasswordMenuDialog;
 extern struct menudialogdef g_OnlineMatchNameMenuDialog;
 extern struct menudialogdef g_OnlineCreatePasswordMenuDialog;
+extern struct menudialogdef g_OnlineServerAddressMenuDialog;
 
 static char g_OnlineRoomId[16];          // the match shown in the details dialog
 static char g_OnlineJoinPassword[33];
@@ -42,6 +45,11 @@ static char *onlineText(s32 slot, const char *fmt, ...)
 	vsnprintf(g_OnlineText[slot], sizeof(g_OnlineText[slot]), fmt, args);
 	va_end(args);
 	return g_OnlineText[slot];
+}
+
+static void onlineSaveSettings(void)
+{
+	configSave(CONFIG_PATH);
 }
 
 static const struct lobbyroom *onlineSelectedRoom(void)
@@ -245,6 +253,14 @@ struct menuitem g_OnlineMenuItems[] = {
 	{
 		MENUITEMTYPE_SELECTABLE,
 		0,
+		MENUITEMFLAG_LITERAL_TEXT | MENUITEMFLAG_SELECTABLE_OPENSDIALOG,
+		(uintptr_t)"Change Server...\n",
+		0,
+		(void *)&g_OnlineServerMenuDialog,
+	},
+	{
+		MENUITEMTYPE_SELECTABLE,
+		0,
 		MENUITEMFLAG_LITERAL_TEXT | MENUITEMFLAG_SELECTABLE_CLOSESDIALOG,
 		(uintptr_t)"Back\n",
 		0,
@@ -428,7 +444,7 @@ struct menudialogdef g_OnlineRoomMenuDialog = {
 };
 
 /* ------------------------------------------------------------------------
- * Keyboard dialogs: join password, match name, create password
+ * Keyboard dialogs: join password, match name, create password, server address
  * ------------------------------------------------------------------------ */
 
 static MenuItemHandlerResult onlineKbJoinPassword(s32 operation, struct menuitem *item, union handlerdata *data)
@@ -476,6 +492,26 @@ static MenuItemHandlerResult onlineKbCreatePassword(s32 operation, struct menuit
 	return 0;
 }
 
+static MenuItemHandlerResult onlineKbServerAddress(s32 operation, struct menuitem *item, union handlerdata *data)
+{
+	switch (operation) {
+	case MENUOP_GETTEXT:
+		strcpy(data->keyboard.string, lobbyGetServerDisplay());
+		break;
+	case MENUOP_SETTEXT:
+		lobbySetServer(data->keyboard.string);
+		onlineSaveSettings();
+		break;
+	case MENUOP_SET:
+		// back to the match list on the new server
+		menuPopDialog();
+		lobbyConnect(lobbyGetServer());
+		break;
+	}
+
+	return 0;
+}
+
 // the keyboard item's param is the maximum length; param3 = 1 allows text wider than an agent name
 struct menuitem g_OnlineJoinPasswordMenuItems[] = {
 	{ MENUITEMTYPE_LABEL, 0, MENUITEMFLAG_LITERAL_TEXT | MENUITEMFLAG_LESSLEFTPADDING, (uintptr_t)"Enter the match password:\n", 0, NULL },
@@ -495,6 +531,12 @@ struct menuitem g_OnlineCreatePasswordMenuItems[] = {
 	{ MENUITEMTYPE_END },
 };
 
+struct menuitem g_OnlineServerAddressMenuItems[] = {
+	{ MENUITEMTYPE_LABEL, 0, MENUITEMFLAG_LITERAL_TEXT | MENUITEMFLAG_LESSLEFTPADDING, (uintptr_t)"Server address (host or host:port):\n", 0, NULL },
+	{ MENUITEMTYPE_KEYBOARD, LOBBY_SERVER_LEN - 1, MENUITEMFLAG_KEYBOARD_URL, 0, 1, onlineKbServerAddress },
+	{ MENUITEMTYPE_END },
+};
+
 struct menudialogdef g_OnlineJoinPasswordMenuDialog = {
 	MENUDIALOGTYPE_DEFAULT, (uintptr_t)"Password", g_OnlineJoinPasswordMenuItems, NULL, MENUDIALOGFLAG_LITERAL_TEXT | MENUDIALOGFLAG_DISABLEBANNER, NULL,
 };
@@ -505,6 +547,10 @@ struct menudialogdef g_OnlineMatchNameMenuDialog = {
 
 struct menudialogdef g_OnlineCreatePasswordMenuDialog = {
 	MENUDIALOGTYPE_DEFAULT, (uintptr_t)"Match Password", g_OnlineCreatePasswordMenuItems, NULL, MENUDIALOGFLAG_LITERAL_TEXT | MENUDIALOGFLAG_DISABLEBANNER, NULL,
+};
+
+struct menudialogdef g_OnlineServerAddressMenuDialog = {
+	MENUDIALOGTYPE_DEFAULT, (uintptr_t)"Server Address", g_OnlineServerAddressMenuItems, NULL, MENUDIALOGFLAG_LITERAL_TEXT | MENUDIALOGFLAG_DISABLEBANNER, NULL,
 };
 
 /* ------------------------------------------------------------------------
@@ -758,6 +804,56 @@ struct menudialogdef g_OnlineCreateMenuDialog = {
 	(uintptr_t)"Create Match",
 	g_OnlineCreateMenuItems,
 	onlineSubDialog,
+	MENUDIALOGFLAG_LITERAL_TEXT,
+	NULL,
+};
+
+/* ------------------------------------------------------------------------
+ * Server
+ * ------------------------------------------------------------------------ */
+
+static char *onlineServerTextDefault(struct menuitem *item)
+{
+	return onlineText(2, "Use %.40s\n", lobbyGetDefaultServer());
+}
+
+static MenuItemHandlerResult onlineServerHandlerDefault(s32 operation, struct menuitem *item, union handlerdata *data)
+{
+	if (operation == MENUOP_SET) {
+		lobbySetServer("");
+		onlineSaveSettings();
+		menuPopDialog();
+		lobbyConnect(lobbyGetServer());
+	}
+
+	return 0;
+}
+
+static MenuItemHandlerResult onlineServerHandlerEnter(s32 operation, struct menuitem *item, union handlerdata *data)
+{
+	if (operation == MENUOP_SET) {
+		menuPushDialog(&g_OnlineServerAddressMenuDialog);
+	}
+
+	return 0;
+}
+
+struct menuitem g_OnlineServerMenuItems[] = {
+	{ MENUITEMTYPE_LABEL, 0, MENUITEMFLAG_LESSLEFTPADDING, (uintptr_t)&onlineMenuTextServer, 0, NULL },
+	{ MENUITEMTYPE_LABEL, 0, MENUITEMFLAG_LITERAL_TEXT | MENUITEMFLAG_LESSLEFTPADDING, (uintptr_t)"Players on the same server\n", 0, NULL },
+	{ MENUITEMTYPE_LABEL, 0, MENUITEMFLAG_LITERAL_TEXT | MENUITEMFLAG_LESSLEFTPADDING, (uintptr_t)"see each other's matches.\n", 0, NULL },
+	{ MENUITEMTYPE_SEPARATOR, 0, 0, 0, 0, NULL },
+	{ MENUITEMTYPE_SELECTABLE, 0, 0, (uintptr_t)&onlineServerTextDefault, 0, onlineServerHandlerDefault },
+	{ MENUITEMTYPE_SELECTABLE, 0, MENUITEMFLAG_LITERAL_TEXT, (uintptr_t)"Enter Address...\n", 0, onlineServerHandlerEnter },
+	{ MENUITEMTYPE_SELECTABLE, 0, MENUITEMFLAG_LITERAL_TEXT | MENUITEMFLAG_SELECTABLE_CLOSESDIALOG, (uintptr_t)"Back\n", 0, NULL },
+	{ MENUITEMTYPE_END },
+};
+
+struct menudialogdef g_OnlineServerMenuDialog = {
+	MENUDIALOGTYPE_DEFAULT,
+	(uintptr_t)"Online Server",
+	g_OnlineServerMenuItems,
+	NULL,
 	MENUDIALOGFLAG_LITERAL_TEXT,
 	NULL,
 };

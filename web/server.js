@@ -3,6 +3,11 @@
 //
 //   node web/server.js [--root build-web] [--port 8080] [--https-port 8443] [--host 0.0.0.0]
 //                      [--cert cert.pem --key key.pem] [--no-https]
+//                      [--rom pd.z64] [--max-rooms 4] [--no-lobby] [--lobby-url host]
+//
+// The online lobby (WebSocket /net) runs in the same server unless --no-lobby is given. With
+// --lobby-url, the game's Online menu uses that lobby server by default instead of this one (eg.
+// the game on one host name and the lobby on another, each its own server process).
 //
 // Serves index.html, pd-web.js, pd.js and pd.wasm from the build directory. ROM files are
 // never served: players load their own ROM in the browser.
@@ -35,15 +40,35 @@ const USE_HTTPS = !process.argv.includes('--no-https');
 const CERT_DIR = path.join(__dirname, '.cert');
 const ROM_PATH = arg('rom', process.env.PD_ROM);
 const MAX_ROOMS = parseInt(arg('max-rooms', process.env.PD_MAX_ROOMS || '4'), 10);
+const LOBBY_URL = arg('lobby-url', process.env.PD_LOBBY_URL || '');
+const NO_LOBBY = process.argv.includes('--no-lobby');
 
 // Online multiplayer lobby (WebSocket /net). Needs the 'ws' package (npm install in web/) and,
 // to run matches, the ROM (--rom), which stays on the server and is never served.
 let lobby = null;
-try {
-  const { Lobby } = require('./net/lobby.js');
-  lobby = new Lobby({ buildDir: ROOT, romPath: ROM_PATH, maxRooms: MAX_ROOMS, log: (m) => console.log(`${new Date().toISOString()} ${m}`) });
-} catch (e) {
-  console.warn(`warning: multiplayer lobby disabled: ${e.message}`);
+if (!NO_LOBBY) {
+  try {
+    const { Lobby } = require('./net/lobby.js');
+    lobby = new Lobby({ buildDir: ROOT, romPath: ROM_PATH, maxRooms: MAX_ROOMS, log: (m) => console.log(`${new Date().toISOString()} ${m}`) });
+  } catch (e) {
+    console.warn(`warning: multiplayer lobby disabled: ${e.message}`);
+  }
+}
+
+// id of the game build (the pages load pd.js?v=<id>; clients and lobby must run the same build)
+let buildCache = { mtimeMs: 0, id: null };
+function buildId() {
+  try {
+    const wasm = path.join(ROOT, 'pd.wasm');
+    const stat = fs.statSync(wasm);
+    if (stat.mtimeMs !== buildCache.mtimeMs) {
+      const id = require('node:crypto').createHash('sha1').update(fs.readFileSync(wasm)).digest('hex').slice(0, 12);
+      buildCache = { mtimeMs: stat.mtimeMs, id };
+    }
+  } catch {
+    buildCache = { mtimeMs: 0, id: null };
+  }
+  return buildCache.id;
 }
 
 const MIME = {
@@ -121,8 +146,10 @@ function handler(req, res) {
     }
     return send(res, 200, JSON.stringify({
       httpsPort: tls ? HTTPS_PORT : null,
-      build: lobby ? lobby.buildId : null,
-      online: !!(lobby && lobby.enabled),
+      build: buildId(),
+      online: !!(lobby && lobby.enabled) || !!LOBBY_URL,
+      // default lobby server for the game's Online menu (null = this server)
+      lobby: LOBBY_URL || null,
     }), {
       'Content-Type': 'application/json; charset=utf-8',
       'Cache-Control': 'no-cache',

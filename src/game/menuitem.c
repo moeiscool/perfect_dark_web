@@ -50,6 +50,24 @@ u8 g_KeyboardKeys[5][10] = {
 	{ '1','2','1','2','1','2','3','1','2','3' },
 };
 
+static u8 menuitemKeyboardKey(struct menuitem *item, s32 row, s32 col)
+{
+	u8 key = g_KeyboardKeys[row][col];
+
+#ifndef PLATFORM_N64
+	// server addresses need : and - rather than ? and !
+	if (item->flags & MENUITEMFLAG_KEYBOARD_URL) {
+		if (key == '?') {
+			key = ':';
+		} else if (key == '!') {
+			key = '-';
+		}
+	}
+#endif
+
+	return key;
+}
+
 static s32 deferredindex = -1;
 
 s32 func0f0e5ce0(s32 value)
@@ -1346,7 +1364,7 @@ Gfx *menuitemKeyboardRender(Gfx *gdl, struct menurendercontext *context)
 #endif
 			} else {
 				// Alpha-numeric cell
-				label[0] = g_KeyboardKeys[row][col];
+				label[0] = menuitemKeyboardKey(context->item, row, col);
 
 				if (!data->capseffective && label[0] >= 'A' && label[0] <= 'Z') {
 					// Make lowercase
@@ -1549,7 +1567,7 @@ bool menuitemKeyboardTick(struct menuitem *item, struct menuinputs *inputs, u32 
 			// handle text input
 			s32 prevpos = strlen(kb->string);
 			s32 pos = prevpos;
-			s32 result = inputTextHandler(kb->string, maxlen + 1, &pos, true);
+			s32 result = inputTextHandler(kb->string, maxlen + 1, &pos, (item->flags & MENUITEMFLAG_KEYBOARD_URL) ? 2 : 1);
 			if (result == -1) {
 				// cancel
 				kb->row = 5;
@@ -1632,7 +1650,7 @@ bool menuitemKeyboardTick(struct menuitem *item, struct menuinputs *inputs, u32 
 
 					while (!appended) {
 						if (kb->string[i] == '\0') {
-							u8 key = g_KeyboardKeys[kb->row][kb->col];
+							u8 key = menuitemKeyboardKey(item, kb->row, kb->col);
 							appended = true;
 
 							if (kb->capseffective == 0 && key >= 'A' && key <= 'Z') {

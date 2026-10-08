@@ -5,6 +5,7 @@
 #include <ultra64.h>
 #include "platform.h"
 #include "system.h"
+#include "config.h"
 #include "lobby.h"
 #include "constants.h"
 #include "bss.h"
@@ -17,7 +18,7 @@
 
 // Online lobby client: see port/include/lobby.h and the protocol in web/net/lobby.js.
 
-static char g_LobbyServerCfg[LOBBY_SERVER_LEN + 1]; // "" = default
+static char g_LobbyServerCfg[LOBBY_SERVER_LEN + 1]; // saved in pd.ini; "" = default
 static char g_LobbyServer[LOBBY_SERVER_LEN + 1];    // the one connected to
 static s32 g_LobbyState = LOBBY_OFFLINE;
 static char g_LobbyStatus[96];
@@ -663,6 +664,29 @@ const char *lobbyGetServerDisplay(void)
 	return display;
 }
 
+void lobbySetServer(const char *server)
+{
+	char clean[LOBBY_SERVER_LEN + 1];
+	s32 len = 0;
+
+	for (; *server && len < LOBBY_SERVER_LEN; server++) {
+		const char c = *server;
+
+		if (isalnum((u8)c) || c == '.' || c == ':' || c == '-' || c == '/' || c == '_') {
+			clean[len++] = tolower((u8)c);
+		}
+	}
+
+	clean[len] = '\0';
+
+	// the default server is saved as "" so it follows the page's host
+	if (strcmp(clean, lobbyGetDefaultServer()) == 0) {
+		clean[0] = '\0';
+	}
+
+	snprintf(g_LobbyServerCfg, sizeof(g_LobbyServerCfg), "%s", clean);
+}
+
 void lobbyConnect(const char *server)
 {
 	lobbyDisconnect();
@@ -810,4 +834,9 @@ void lobbyJoin(const char *roomid, const char *password)
 s32 lobbyShouldReturnToMenu(void)
 {
 	return lobbyPlatformTakeReturnFlag();
+}
+
+PD_CONSTRUCTOR static void lobbyConfigInit(void)
+{
+	configRegisterString("Net.LobbyServer", g_LobbyServerCfg, sizeof(g_LobbyServerCfg));
 }
