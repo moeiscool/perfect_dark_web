@@ -6,11 +6,13 @@
 const zlib = require('node:zlib');
 const crypto = require('node:crypto');
 const PDNet = require('./nethost.js');
+const { makeMatchConfig } = require('./settings.js');
 const { startHeadless } = require('./headless.js');
 
 const TICK_MS = 1000 / 60;
 const HISTORY_TICKS = 60 * 10;        // ticks kept to send after a snapshot
-const INPUT_TIMEOUT_MS = 250;         // a player who stops sending input is treated as idle
+const INPUT_TIMEOUT_MS = 3000;        // a player who stops sending input is treated as idle
+                                      // (clients send only changes, plus a 1 s heartbeat)
 const RECONNECT_GRACE_MS = 60 * 1000; // a disconnected player's slot is kept for them this long
 const HASH_INTERVAL = 60;
 
@@ -44,20 +46,7 @@ class Match {
     this.results = null;
     this.desyncs = 0;
 
-    const s = this.settings;
-    this.matchConfig = {
-      seed: crypto.randomInt(1, 0x7fffffff),
-      stage: s.stage,
-      scenario: s.scenario,
-      timelimit: s.timelimit - 1,
-      scorelimit: s.scorelimit ? s.scorelimit - 1 : 100,
-      teamscorelimit: 400,
-      options: s.options,
-      weaponset: s.weaponset,
-      occupied: 0,
-      slots: [0, 1, 2, 3].map((i) => ({ name: `Open ${i + 1}`, team: s.teams ? i % 2 : i })),
-      bots: Array.from({ length: s.bots }, (_, i) => ({ difficulty: s.botDifficulty, team: s.teams ? i % 2 : undefined })),
-    };
+    this.matchConfig = makeMatchConfig(this.settings);
   }
 
   async start() {

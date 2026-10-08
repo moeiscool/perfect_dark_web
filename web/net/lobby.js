@@ -16,50 +16,10 @@ const crypto = require('node:crypto');
 const { WebSocketServer } = require('ws');
 const { Match, MSG_INPUT } = require('./match.js');
 
-// arenas that can be picked (STAGE_MP_* ids, src/include/constants.h)
-const ARENAS = {
-  0x32: 'Skedar', 0x29: 'Pipes', 0x17: 'Ravine', 0x20: 'G5 Building', 0x42: 'Sewers', 0x3c: 'Warehouse',
-  0x47: 'Grid', 0x41: 'Ruins', 0x3b: 'Area 52', 0x39: 'Base', 0x44: 'Fortress', 0x45: 'Villa',
-  0x3d: 'Car Park', 0x25: 'Temple', 0x1f: 'Complex', 0x43: 'Felicity',
-};
-const SCENARIOS = ['Combat', 'Hold the Briefcase', 'Hacker Central', 'Pop a Cap', 'King of the Hill', 'Capture the Case'];
-const WEAPON_SETS = ['Pistols', 'Automatics', 'Power', 'FarSight', 'Tranquilizer', 'Heavy', 'Golden Magnum',
-  'Explosive', 'Grenade Launcher', 'Rocket Launcher', 'Proximity Mine', 'Close Combat'];
+const { ARENAS, SCENARIOS, WEAPON_SETS, validateSettings } = require('./settings.js');
 
-const MPOPTION_TEAMSENABLED = 0x00000002;
 const ROOM_IDLE_CLOSE_MS = 2 * 60 * 1000;
 const ROOM_ENDED_CLOSE_MS = 60 * 1000;
-
-function clampInt(v, min, max, def) {
-  const n = parseInt(v, 10);
-  return Number.isFinite(n) ? Math.min(max, Math.max(min, n)) : def;
-}
-
-function validateSettings(s) {
-  s = s || {};
-  let stage = parseInt(s.stage, 10);
-  if (!ARENAS[stage]) {
-    // random
-    const ids = Object.keys(ARENAS).map(Number);
-    stage = ids[crypto.randomInt(ids.length)];
-  }
-  const scenario = clampInt(s.scenario, 0, SCENARIOS.length - 1, 0);
-  // King of the Hill and Capture the Case are team games
-  const teams = !!s.teams || scenario === 4 || scenario === 5;
-  return {
-    name: String(s.name || 'Combat Simulator').replace(/[^\x20-\x7e]/g, '').slice(0, 32) || 'Combat Simulator',
-    stage,
-    scenario,
-    timelimit: clampInt(s.timelimit, 1, 20, 10),
-    scorelimit: clampInt(s.scorelimit, 0, 100, 0),
-    bots: clampInt(s.bots, 0, 8, 0),
-    botDifficulty: clampInt(s.botDifficulty, 0, 5, 2),
-    weaponset: clampInt(s.weaponset, 0, WEAPON_SETS.length - 1, 1),
-    teams,
-    options: teams ? MPOPTION_TEAMSENABLED : 0,
-    password: s.password ? String(s.password).slice(0, 32) : '',
-  };
-}
 
 class Lobby {
   /**
