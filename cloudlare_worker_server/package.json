@@ -1,0 +1,15 @@
+{
+  "name": "perfectdark-cloudflare-worker",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Perfect Dark web game and online lobby (relay) on Cloudflare Workers",
+  "type": "module",
+  "scripts": {
+    "sync": "node scripts/sync-build.mjs",
+    "dev": "wrangler dev",
+    "deploy": "node scripts/sync-build.mjs && wrangler deploy"
+  },
+  "devDependencies": {
+    "wrangler": "^4.40.0"
+  }
+}
