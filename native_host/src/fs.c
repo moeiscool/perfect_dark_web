@@ -385,11 +385,26 @@ f64 w2c_env_emscripten_date_now(struct w2c_env *e)
 // struct tm of Emscripten: 9 ints, long tm_gmtoff (4), const char *tm_zone (4)
 u32 w2c_env_0x5Flocaltime_js(struct w2c_env *e, u64 t, u32 tmp)
 {
-	const time_t tt = (time_t)(int64_t)t;
-	struct tm tm;
-	localtime_r(&tt, &tm);
-	const int32_t v[11] = { tm.tm_sec, tm.tm_min, tm.tm_hour, tm.tm_mday, tm.tm_mon, tm.tm_year,
-		tm.tm_wday, tm.tm_yday, tm.tm_isdst, 0, 0 };
+	// UTC (the game only logs the date); computed here because consoles lack localtime_r
+	const int64_t secs = (int64_t)t;
+	int64_t days = secs >= 0 ? secs / 86400 : -((-secs + 86399) / 86400);
+	const int64_t rem = secs - days * 86400;
+	const int32_t wday = (int32_t)(((days % 7) + 11) % 7); // 1970-01-01 was a Thursday
+	// civil date from days (Howard Hinnant's algorithm)
+	days += 719468;
+	const int64_t era = (days >= 0 ? days : days - 146096) / 146097;
+	const int64_t doe = days - era * 146097;
+	const int64_t yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
+	const int64_t doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+	const int64_t mp = (5 * doy + 2) / 153;
+	const int32_t mday = (int32_t)(doy - (153 * mp + 2) / 5 + 1);
+	const int32_t mon = (int32_t)(mp < 10 ? mp + 3 : mp - 9);
+	const int64_t year = yoe + era * 400 + (mon <= 2);
+	static const int32_t before[12] = { 0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334 };
+	const int leap = (year % 4 == 0 && year % 100 != 0) || year % 400 == 0;
+	const int32_t yday = before[mon - 1] + mday - 1 + (leap && mon > 2);
+	const int32_t v[11] = { (int32_t)(rem % 60), (int32_t)(rem / 60 % 60), (int32_t)(rem / 3600), mday, mon - 1,
+		(int32_t)(year - 1900), wday, yday, 0, 0, 0 };
 	memcpy(wmem() + tmp, v, sizeof(v));
 	return 0;
 }

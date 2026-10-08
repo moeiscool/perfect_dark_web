@@ -14,6 +14,9 @@ set(PDHOST_PLATFORM "sdl" CACHE STRING "platform layer: sdl, or null (headless: 
 set(PDHOST_PLATFORM_NAME "native" CACHE STRING "platform name the lobby sees")
 set(PDHOST_DEFAULT_LOBBY "perfectdarklobby.m03.ca" CACHE STRING "lobby server of the Online menu")
 option(PDHOST_TLS "secure connections (wss://) with mbedTLS" ON)
+option(PDHOST_LIBRARY "build a static library without main() (consoles link it into their app, see ps5/)" OFF)
+option(PDHOST_BOUNDS_CHECK "check wasm memory accesses explicitly instead of with guard pages (for systems without large mmap reservations)" OFF)
+set(PDHOST_SDL2_INCLUDE_DIR "" CACHE PATH "SDL2 headers, instead of find_package(SDL2) (cross builds)")
 
 if(NOT EXISTS "${WABT_DIR}/wasm2c/wasm-rt-impl.c")
   message(FATAL_ERROR "set WABT_DIR to a wabt checkout with wasm2c built (https://github.com/WebAssembly/wabt)")
@@ -59,7 +62,7 @@ file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/pdbuild.h"
   "static const unsigned g_SnapRanges[][2] = {\n${PDHOST_SNAP_RANGES}};\n")
 message(STATUS "pd.wasm build ${PDHOST_BUILD_ID}, ${PD_SNAP_COUNT} snapshot ranges")
 
-add_executable(pdhost
+add_library(pdhost_objs OBJECT
   src/main.c
   src/fs.c
   src/gl.c
@@ -71,22 +74,39 @@ add_executable(pdhost
   "${WABT_DIR}/wasm2c/wasm-rt-impl.c"
   "${WABT_DIR}/wasm2c/wasm-rt-mem-impl.c"
 )
-target_include_directories(pdhost PRIVATE "${W2C_DIR}" "${WABT_DIR}/wasm2c" src "${CMAKE_CURRENT_BINARY_DIR}")
+if(PDHOST_LIBRARY)
+  add_library(pdhost STATIC $<TARGET_OBJECTS:pdhost_objs>)
+  target_compile_definitions(pdhost_objs PRIVATE PDHOST_NO_MAIN=1)
+else()
+  add_executable(pdhost $<TARGET_OBJECTS:pdhost_objs>)
+endif()
+if(PDHOST_BOUNDS_CHECK)
+  target_compile_definitions(pdhost_objs PRIVATE WASM_RT_MEMCHECK_BOUNDS_CHECK=1 WASM_RT_MEMCHECK_GUARD_PAGES=0 WASM_RT_USE_MMAP=0)
+endif()
+target_include_directories(pdhost_objs PRIVATE "${W2C_DIR}" "${WABT_DIR}/wasm2c" src "${CMAKE_CURRENT_BINARY_DIR}")
 
 # The game must compute exactly what the browsers compute: wasm arithmetic is IEEE-754 without
 # fused multiply-add, so the C compiler must not contract or reassociate float math.
-target_compile_options(pdhost PRIVATE -O2 -ffp-contract=off -fno-fast-math -fno-strict-aliasing
+target_compile_options(pdhost_objs PRIVATE -O2 -ffp-contract=off -fno-fast-math -fno-strict-aliasing
   $<$<C_COMPILER_ID:GNU>:-fexcess-precision=standard>)
 set_source_files_properties(${W2C_OUT} PROPERTIES COMPILE_OPTIONS "-w")
 
 if(PDHOST_PLATFORM STREQUAL "sdl")
-  find_package(SDL2 REQUIRED)
-  target_include_directories(pdhost PRIVATE ${SDL2_INCLUDE_DIRS})
-  target_link_libraries(pdhost PRIVATE ${SDL2_LIBRARIES})
+  if(PDHOST_SDL2_INCLUDE_DIR)
+    target_include_directories(pdhost_objs PRIVATE "${PDHOST_SDL2_INCLUDE_DIR}")
+  else()
+    find_package(SDL2 REQUIRED)
+    target_include_directories(pdhost_objs PRIVATE ${SDL2_INCLUDE_DIRS})
+    target_link_libraries(pdhost PRIVATE ${SDL2_LIBRARIES})
+  endif()
 endif()
 find_package(ZLIB REQUIRED)
-find_package(Threads REQUIRED)
-target_link_libraries(pdhost PRIVATE ZLIB::ZLIB Threads::Threads m)
+target_link_libraries(pdhost_objs PRIVATE ZLIB::ZLIB)
+if(NOT PDHOST_LIBRARY)
+  # (a console links the libraries itself, see ps5/build.sh)
+  find_package(Threads REQUIRED)
+  target_link_libraries(pdhost PRIVATE ZLIB::ZLIB Threads::Threads m)
+endif()
 
 if(PDHOST_TLS)
   include(FetchContent)
@@ -95,6 +115,7 @@ if(PDHOST_TLS)
   FetchContent_Declare(mbedtls
     URL https://github.com/Mbed-TLS/mbedtls/releases/download/mbedtls-3.6.4/mbedtls-3.6.4.tar.bz2)
   FetchContent_MakeAvailable(mbedtls)
-  target_compile_definitions(pdhost PRIVATE PDHOST_TLS=1)
+  target_compile_definitions(pdhost_objs PRIVATE PDHOST_TLS=1)
+  target_link_libraries(pdhost_objs PRIVATE mbedtls)
   target_link_libraries(pdhost PRIVATE mbedtls)
 endif()

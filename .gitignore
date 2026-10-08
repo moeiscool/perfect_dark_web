@@ -29,3 +29,6 @@ cmake-build-debug
 build-web
 web/.cert
 web/node_modules
+/build-ps5/
+/ps5/dist/
+/build-native/

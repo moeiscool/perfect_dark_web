@@ -56,7 +56,8 @@ static void usage(void)
 		"Game options are passed on, eg. --skip-intro, --headless, --net-match /data/match.cfg\n");
 }
 
-int main(int argc, char **argv)
+// the host's entry point; consoles call it from their own main() with their paths (see ps5/)
+int pdhostMain(int argc, char **argv)
 {
 	// game arguments: the same layout the browser uses (web/pd-web.js)
 	static const char *gameArgs[64] = { "pd", "--basedir", "/data", "--savedir", "/save" };
@@ -132,6 +133,13 @@ int main(int argc, char **argv)
 		runInstance(args, nargs);
 	}
 }
+
+#ifndef PDHOST_NO_MAIN
+int main(int argc, char **argv)
+{
+	return pdhostMain(argc, argv);
+}
+#endif
 
 static jmp_buf g_RestartJmp;
 

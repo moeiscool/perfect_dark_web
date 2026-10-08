@@ -209,6 +209,16 @@ static int tcpConnect(struct wsconn *c)
 }
 
 #ifdef PDHOST_TLS
+#ifdef __PROSPERO__
+// the console sandbox may not allow mbedTLS's own entropy sources; the system's arc4random works
+#include <stdlib.h>
+static int consoleEntropy(void *ctx, unsigned char *out, size_t len)
+{
+	arc4random_buf(out, len);
+	return 0;
+}
+#endif
+
 static int tlsStart(struct wsconn *c)
 {
 	static int psaReady;
@@ -220,7 +230,12 @@ static int tlsStart(struct wsconn *c)
 	mbedtls_ssl_config_init(&c->conf);
 	mbedtls_entropy_init(&c->entropy);
 	mbedtls_ctr_drbg_init(&c->drbg);
-	if (mbedtls_ctr_drbg_seed(&c->drbg, mbedtls_entropy_func, &c->entropy, (const unsigned char *)"pdhost", 6) != 0
+#ifdef __PROSPERO__
+	int (*entropy)(void *, unsigned char *, size_t) = consoleEntropy;
+#else
+	int (*entropy)(void *, unsigned char *, size_t) = mbedtls_entropy_func;
+#endif
+	if (mbedtls_ctr_drbg_seed(&c->drbg, entropy, &c->entropy, (const unsigned char *)"pdhost", 6) != 0
 			|| mbedtls_ssl_config_defaults(&c->conf, MBEDTLS_SSL_IS_CLIENT, MBEDTLS_SSL_TRANSPORT_STREAM, MBEDTLS_SSL_PRESET_DEFAULT) != 0) {
 		setError(c, "TLS setup failed%s", NULL);
 		return -1;

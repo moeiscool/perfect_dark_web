@@ -23,6 +23,9 @@ static SDL_JoystickID padInstance[PDHOST_MAX_PADS];
 
 int platInit(void)
 {
+#ifdef __PROSPERO__
+	SDL_SetMainReady();
+#endif
 	SDL_SetHint(SDL_HINT_GAMECONTROLLER_USE_BUTTON_LABELS, "0");
 	if (SDL_Init(SDL_INIT_TIMER | SDL_INIT_EVENTS | SDL_INIT_GAMECONTROLLER) != 0) {
 		fprintf(stderr, "SDL_Init: %s\n", SDL_GetError());

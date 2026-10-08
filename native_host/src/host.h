@@ -39,6 +39,8 @@ struct hostopts {
 
 extern struct hostopts g_HostOpts;
 
+int pdhostMain(int argc, char **argv);
+
 static inline uint8_t *wmem(void)
 {
 	return w2c_pd_memory(&g_pd)->data;
