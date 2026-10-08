@@ -46,10 +46,15 @@ async function startHeadless(opts) {
 module.exports = { startHeadless };
 
 // Command line: run a match with scripted inputs and print the hashes (determinism testing)
-//   node web/net/headless.js <rom> <ticks> [seed]
+//   node web/net/headless.js <rom> <ticks> [seed] [--record <dir>]
+// --record writes the match config (match.cfg), every tick packet (ticks.bin) and the hashes
+// (hashes.txt) to <dir>, so another host can replay the same match and compare (see native_host/).
 if (require.main === module) {
   (async () => {
-    const [romPath, ticksArg, seedArg] = process.argv.slice(2);
+    const args = process.argv.slice(2);
+    const recIdx = args.indexOf('--record');
+    const recordDir = recIdx >= 0 ? args.splice(recIdx, 2)[1] : null;
+    const [romPath, ticksArg, seedArg] = args;
     const ticks = parseInt(ticksArg || '600', 10);
     const seed = parseInt(seedArg || '1234', 10);
     const buildDir = path.resolve(__dirname, '..', '..', 'build-web');
@@ -72,9 +77,13 @@ if (require.main === module) {
       onHash: (tick, hash) => hashes.push(`${tick} ${hash.toString(16).padStart(8, '0')}`),
     });
 
+    const packets = [];
     for (let t = 0; t < ticks; t++) {
       const inputs = [0, 1, 2, 3].map((slot) => PDNet.scriptedInput(seed, slot, t));
       host.push(t, 0, inputs);
+      if (recordDir) {
+        packets.push(new Uint8Array(PDNet.encodeTick(t, 0, inputs)));
+      }
       // let the game run what was pushed
       while (host.queued() > 0) {
         await new Promise((r) => setImmediate(r));
@@ -82,6 +91,12 @@ if (require.main === module) {
     }
 
     const secs = (Date.now() - started) / 1000;
+    if (recordDir) {
+      fs.mkdirSync(recordDir, { recursive: true });
+      fs.writeFileSync(path.join(recordDir, 'match.cfg'), PDNet.matchConfigText(match));
+      fs.writeFileSync(path.join(recordDir, 'ticks.bin'), Buffer.concat(packets));
+      fs.writeFileSync(path.join(recordDir, 'hashes.txt'), hashes.join('\n') + '\n');
+    }
     console.log(hashes.join('\n'));
     console.error(`${ticks} ticks in ${secs.toFixed(1)}s (${(ticks / secs).toFixed(0)} ticks/s)`);
     process.exit(0);
